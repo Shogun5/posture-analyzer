@@ -22,6 +22,31 @@
 const CLIENT_ID = '822559901418-kei8as7i6qemq2797dtoqsqb557g2j22.apps.googleusercontent.com';   // 與 js/config.js 相同
 const APP_URL = 'https://shogun5.github.io/posture-analyzer/';           // 跳轉登入完成後回到的網址
 const SESSION_DAYS = 30;                                                 // 登入有效天數（每次開啟仍會線上複查）
+// 名冊試算表 ID（網址中 /d/ 與 /edit 之間那一段）。填了之後 Users、Requests 改從這份讀寫，
+// 可只把這份分享給工作人員編輯；Apps Script、講義模組、Log 留在本試算表，工作人員碰不到。空白 = 使用本試算表。
+const ROSTER_ID = '';
+
+function roster_() { return ROSTER_ID ? SpreadsheetApp.openById(ROSTER_ID) : SpreadsheetApp.getActiveSpreadsheet(); }
+
+/** 建好名冊試算表並填入 ROSTER_ID 後執行一次：建立工作表並把本檔現有的 Users／Requests 複製過去 */
+function setupRoster() {
+  if (!ROSTER_ID) throw new Error('請先在 ROSTER_ID 填入名冊試算表的 ID');
+  const src = SpreadsheetApp.getActiveSpreadsheet(), dst = SpreadsheetApp.openById(ROSTER_ID);
+  for (const [name, header] of [['Users', ['email', 'name', 'expires', 'active', 'note']], ['Requests', ['time', 'email', 'name']]]) {
+    const sh = dst.getSheetByName(name) || dst.insertSheet(name);
+    if (sh.getLastRow() > 1) continue;                         // 名冊已有資料就不覆蓋
+    const from = src.getSheetByName(name);
+    const rows = from && from.getLastRow() > 0 ? from.getDataRange().getValues() : [header];
+    sh.clear(); sh.getRange(1, 1, rows.length, rows[0].length).setValues(rows); sh.setFrozenRows(1);
+  }
+  // active 欄加上核取方塊；expires 欄限制為日期，減少輸入錯誤
+  const users = dst.getSheetByName('Users'), n = Math.max(users.getMaxRows() - 1, 1);
+  users.getRange(2, 4, n, 1).insertCheckboxes();
+  users.getRange(2, 3, n, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireDate().setAllowInvalid(false)
+    .setHelpText('請輸入日期 YYYY-MM-DD，或留空表示不限期').build()).setNumberFormat('yyyy-mm-dd');
+  const def = dst.getSheetByName('工作表1') || dst.getSheetByName('Sheet1');
+  if (def && dst.getSheets().length > 1) dst.deleteSheet(def);
+}
 
 function setup() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -78,7 +103,7 @@ function login_(idToken, action, ua) {
   const email = String(info.email).toLowerCase();
   const user = findUser_(email);
   if (!user) {
-    SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Requests').appendRow([new Date(), email, info.name || '']);
+    roster_().getSheetByName('Requests').appendRow([new Date(), email, info.name || '']);
     return log_(email, action, 'not_listed', ua, { ok: false, reason: 'not_listed', email: email });
   }
   if (!user.allowed) return log_(email, action, user.reason, ua, { ok: false, reason: user.reason, email: email });
@@ -111,7 +136,7 @@ function module_(session, ver, ua) {
 }
 
 function findUser_(email) {
-  const rows = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Users').getDataRange().getValues();
+  const rows = roster_().getSheetByName('Users').getDataRange().getValues();
   for (let i = 1; i < rows.length; i++) {
     if (String(rows[i][0]).trim().toLowerCase() !== email) continue;
     const name = rows[i][1], expires = rows[i][2], active = rows[i][3];
