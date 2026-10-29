@@ -11,7 +11,7 @@ import { timeSeries, trend, chartPNG, summaryTable } from './charts.js';
 import { downloadCSV, downloadVideos, download, dataURLtoBlob, reportHTML, KEY_VARS } from './export.js';
 import { sgDerivative } from './filters.js';
 
-export const APP_VERSION = '1.0.2'; // 與 sw.js 的 CACHE 版本一起更新
+export const APP_VERSION = '1.0.3'; // 與 sw.js 的 CACHE 版本一起更新
 
 const $ = s => document.querySelector(s);
 const fin = Number.isFinite;
@@ -32,7 +32,8 @@ const saveCfg = () => { try { localStorage.setItem('pa.cfg', JSON.stringify(cfg)
 // ---------------- 當機追蹤（breadcrumb） ----------------
 // 每個高風險步驟前記下目前階段；正常關閉頁面時記為 closed。
 // 下次開啟若上次停在某階段（瀏覽器分頁當機不會觸發 pagehide），就顯示階段並自動改用較安全的設定。
-const CRASH_STAGES = ['camera', 'model', 'live', 'countdown', 'record', 'process', 'results', 'save'];
+// 記錄開始被細分：rec_audio（嗶聲+語音）→ rec_recorder（啟動錄影器）→ rec_running（錄影中逐幀）→ rec_snapshot（快照）
+const CRASH_STAGES = ['camera', 'model', 'live', 'countdown', 'record', 'rec_audio', 'rec_recorder', 'rec_running', 'rec_snapshot', 'process', 'results', 'save'];
 function crumb(stage, extra = {}) {
   try { localStorage.setItem('pa.crumb', JSON.stringify({ stage, t: Date.now(), delegate: cfg.delegate, videoFmt: cfg.videoFmt, model: cfg.model, ...extra })); } catch { /* ignore */ }
 }
@@ -42,13 +43,17 @@ function recoverFromCrash() {
   try { c = JSON.parse(localStorage.getItem('pa.crumb') || 'null'); } catch { /* ignore */ }
   if (!c || !CRASH_STAGES.includes(c.stage)) return null;
   const fixes = [];
-  if (c.stage === 'record') {
+  const stepDownVideo = () => {
     // 錄影編碼器當機：MP4(H.264) → WebM → 不錄影
-    if (cfg.videoFmt === 'auto' || cfg.videoFmt === 'mp4') { cfg.videoFmt = 'webm'; fixes.push('video → WebM'); }
-    else if (cfg.videoFmt === 'webm') { cfg.videoFmt = 'none'; fixes.push('video → off'); }
-  } else if (['model', 'live', 'countdown'].includes(c.stage) && cfg.delegate === 'GPU') {
-    cfg.delegate = 'CPU'; fixes.push('GPU → CPU');               // WebGL/GPU 推論當機
-  }
+    if (cfg.videoFmt === 'auto' || cfg.videoFmt === 'mp4') { cfg.videoFmt = 'webm'; fixes.push('video → WebM'); return true; }
+    if (cfg.videoFmt === 'webm') { cfg.videoFmt = 'none'; fixes.push('video → off'); return true; }
+    return false;
+  };
+  const toCPU = () => { if (cfg.delegate === 'GPU') { cfg.delegate = 'CPU'; fixes.push('GPU → CPU'); } };
+  if (c.stage === 'rec_audio') { cfg.quietRec = true; fixes.push('record voice/beep → off'); }
+  else if (c.stage === 'rec_snapshot') { cfg.noSnapshot = true; fixes.push('snapshot → off'); }
+  else if (['record', 'rec_recorder', 'rec_running'].includes(c.stage)) { if (!stepDownVideo()) toCPU(); }
+  else if (['model', 'live', 'countdown'].includes(c.stage)) toCPU();            // WebGL/GPU 推論當機
   saveCfg();
   const info = { ...c, fixes, at: new Date(c.t).toLocaleString() };
   try { localStorage.setItem('pa.lastCrash', JSON.stringify(info)); } catch { /* ignore */ }
@@ -173,12 +178,14 @@ function loop(now) {
   if (vars) for (const k of KEY_VARS[view].slice(0, 9)) if (fin(vars[k])) panel.push([k.replace(/_(deg|cm|m)$/, ''), `${vars[k].toFixed(1)}${k.endsWith('_deg') ? '°' : k.endsWith('_cm') ? 'cm' : 'm'}`]);
   let banner = '';
   if (S.phase === 'countdown') banner = String(Math.max(0, Math.ceil((S.countdownEnd - now) / 1000)));
-  if (S.phase === 'record') banner = `● ${((now - S.recStart) / 1000).toFixed(1)} s`;
+  if (S.phase === 'record') banner = `REC ${((now - S.recStart) / 1000).toFixed(1)} s`;
   drawOverlay(ctx, { lm, view, up: S.up, scale: S.liveScale, vars, trails: S.trails, vel, height_m: cfg.height_cm / 100, visThr: cfg.visThr, panel, banner });
+  if (S.phase === 'record' && !S.runningMarked) { S.runningMarked = true; crumb('rec_running'); }
 
   // 快照：記錄中段
   if (S.phase === 'record' && !S.snapTaken && now - S.recStart > cfg.captureSec * 500) {
-    S.snapTaken = true; S.snapshot = canvas.toDataURL('image/jpeg', 0.85);
+    S.snapTaken = true;
+    if (!cfg.noSnapshot) { crumb('rec_snapshot'); S.snapshot = canvas.toDataURL('image/jpeg', 0.85); crumb('rec_running'); }
   }
   if (S.phase === 'record' && now - S.recStart >= cfg.captureSec * 1000) finishRecording();
   renderStatus(detView);
@@ -257,11 +264,11 @@ function startCountdown(sec = cfg.countdownSec) {
 }
 
 function startRecording(now) {
-  beep(1046, 300);
-  say('recording', { interrupt: true });
-  S.recFrames = []; S.recStart = now; S.snapTaken = false; S.snapshot = null;
+  crumb('rec_audio');
+  if (!cfg.quietRec) { beep(1046, 300); say('recording', { interrupt: true }); }
+  S.recFrames = []; S.recStart = now; S.snapTaken = false; S.snapshot = null; S.runningMarked = false;
   S.recorder = new CanvasRecorder(canvas, 30, cfg.videoFmt);
-  crumb('record', { mime: S.recorder.mime });
+  crumb('rec_recorder', { mime: S.recorder.mime });
   try { S.recorder.start(); } catch (e) { console.warn('recorder', e); S.recorder = null; } // 錄影失敗仍繼續記錄關鍵點
   setPhase('record');
   $('#msg').textContent = '';
@@ -481,7 +488,14 @@ $('#settingsForm').addEventListener('submit', async e => {
   else if (S.stream && (old.model !== cfg.model || old.delegate !== cfg.delegate)) ensureModel();
   toast(t('saved'));
 });
-$('#resetThrBtn').onclick = () => { $('#settingsForm').elements.thr.value = JSON.stringify(DEFAULT_THR, null, 2); };
+// 還原自動安全模式所改的設定，並清除當機紀錄
+$('#resetSafeBtn').onclick = () => {
+  Object.assign(cfg, { delegate: 'GPU', videoFmt: 'auto', quietRec: false, noSnapshot: false });
+  saveCfg(); fillSettings();
+  try { localStorage.removeItem('pa.lastCrash'); } catch { /* ignore */ }
+  $('#crashInfo').textContent = ''; toast(t('saved'));
+};
+$('#resetThrBtn').onclick =() => { $('#settingsForm').elements.thr.value = JSON.stringify(DEFAULT_THR, null, 2); };
 
 // ---------------- 分頁、語言、按鈕 ----------------
 function showTab(name) {

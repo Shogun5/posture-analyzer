@@ -37,9 +37,10 @@ export const STR = {
     level: '手機傾斜', liveVoiceHeard: '聽到：',
     deltaNote: 'Δ = 相對 0° 基準',
     delegate: '運算方式', videoFmt: '錄影格式', fmtAuto: '自動（Safari→MP4，其他→WebM）', fmtNone: '不錄影',
-    crashPrev: '上次頁面在此階段中斷：', crashFixed: '已自動改用 ',
+    crashPrev: '上次頁面在此階段中斷：', crashFixed: '已自動改用 ', resetSafe: '還原安全模式設定',
     stage_camera: '開啟相機', stage_model: '載入模型', stage_live: '即時分析', stage_countdown: '倒數',
-    stage_record: '開始錄影', stage_process: '資料處理', stage_results: '顯示結果', stage_save: '儲存',
+    stage_record: '開始錄影', stage_rec_audio: '記錄開始的嗶聲/語音', stage_rec_recorder: '啟動錄影器', stage_rec_running: '錄影中', stage_rec_snapshot: '擷取快照',
+    stage_process: '資料處理', stage_results: '顯示結果', stage_save: '儲存',
   },
   en: {
     appTitle: 'Posture Analyzer',
@@ -78,9 +79,10 @@ export const STR = {
     level: 'Phone tilt', liveVoiceHeard: 'Heard: ',
     deltaNote: 'Δ = relative to 0° baseline',
     delegate: 'Compute', videoFmt: 'Video format', fmtAuto: 'Auto (Safari→MP4, others→WebM)', fmtNone: 'No video',
-    crashPrev: 'Page stopped last time at: ', crashFixed: 'switched to ',
+    crashPrev: 'Page stopped last time at: ', crashFixed: 'switched to ', resetSafe: 'Reset safe-mode settings',
     stage_camera: 'opening camera', stage_model: 'loading model', stage_live: 'live analysis', stage_countdown: 'countdown',
-    stage_record: 'starting recording', stage_process: 'processing', stage_results: 'showing results', stage_save: 'saving',
+    stage_record: 'starting recording', stage_rec_audio: 'record-start beep/voice', stage_rec_recorder: 'starting video recorder', stage_rec_running: 'recording frames', stage_rec_snapshot: 'taking snapshot',
+    stage_process: 'processing', stage_results: 'showing results', stage_save: 'saving',
   },
 };
 
