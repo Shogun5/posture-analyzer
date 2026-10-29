@@ -1,6 +1,7 @@
 // export.js — 匯出：CSV（長格式）、影片、PNG、HTML 報告（可列印為 PDF）。全部在本機產生下載。
 import { LM_NAMES, VIEWS } from './biomech.js';
 import { t, getLang } from './i18n.js';
+import { MOVES, asymmetry } from './rom.js';
 
 export function download(data, filename, type = 'application/octet-stream') {
   const blob = data instanceof Blob ? data : new Blob([data], { type });
@@ -41,6 +42,18 @@ export function sessionCSV(s, includeRawLandmarks = false) {
     for (const [name, st] of Object.entries(r.summary))
       for (const k of ['mean', 'max', 'min', 'rom', 'tmax', 'tmin']) L.push(`${pre},summary,,,${name}__${k},${num(st[k])}`);
   }
+  // ROM 測試：view 欄 = rom_<動作 id>；raw = 原始幀的帶號角度（未扣基準）；filtered = 相對 0° 基準
+  for (const [id, r] of Object.entries(s.rom || {})) {
+    const pre = `${esc(s.subject)},${s.date},rom_${id}`;
+    for (const [vn, arr] of Object.entries(r.raw)) arr.forEach((v, k) => L.push(`${pre},raw,${k},${num(r.tRaw[k])},${vn},${num(v)}`));
+    for (const [vn, arr] of Object.entries(r.series)) arr.forEach((v, k) => L.push(`${pre},filtered,${k},${num(r.t[k])},${vn.replace(/_deg$/, '_rel_deg')},${num(v)}`));
+    for (const [vn, mt] of Object.entries(r.metrics)) {
+      const b = vn.replace(/_deg$/, '');
+      L.push(`${pre},summary,,,${b}__baseline_deg,${num(r.base[vn])}`, `${pre},summary,,,${b}__pos_peak_deg,${num(mt.pos)}`, `${pre},summary,,,${b}__pos_t_s,${num(mt.tPos)}`,
+        `${pre},summary,,,${b}__neg_peak_deg,${num(mt.neg)}`, `${pre},summary,,,${b}__neg_t_s,${num(mt.tNeg)}`, `${pre},summary,,,${b}__rom_deg,${num(mt.rom)}`,
+        `${pre},summary,,,${b}__pos_pct_norm,${num(mt.pctPos)}`, `${pre},summary,,,${b}__neg_pct_norm,${num(mt.pctNeg)}`, `${pre},summary,,,${b}__valid_pct,${num(mt.validPct)}`);
+    }
+  }
   return '﻿' + L.join('\n'); // BOM 讓 Excel 正確顯示中文
 }
 
@@ -51,6 +64,27 @@ export function downloadVideos(s) {
     const vid = s.views?.[v]?.video;
     if (vid?.blob) download(vid.blob, `${fileBase(s)}_${v}.${vid.ext}`);
   }
+  for (const [id, r] of Object.entries(s.rom || {})) if (r.video?.blob) download(r.video.blob, `${fileBase(s)}_rom_${id}.${r.video.ext}`);
+}
+
+/** 報告中的 ROM 段落 */
+function romSection(s, compare) {
+  const R = s.rom; if (!R || !Object.keys(R).length) return '';
+  const en = getLang() === 'en', f = x => (Number.isFinite(x) ? x.toFixed(0) : '–'), C = compare?.rom;
+  let rows = '';
+  for (const m of MOVES) {
+    const r = R[m.id]; if (!r) continue;
+    for (const [vn, mt] of Object.entries(r.metrics)) {
+      const c = C?.[m.id]?.metrics?.[vn];
+      rows += `<tr><td>${escH(en ? m.en : m.zh)}</td><td>${mt.side}</td><td>${escH(en ? m.pos.en : m.pos.zh)} ${f(mt.pos)}° / ${m.pos.norm}° (${f(mt.pctPos)}%)</td>`
+        + `<td>${m.neg ? `${escH(en ? m.neg.en : m.neg.zh)} ${f(-mt.neg)}° / ${m.neg.norm}° (${f(mt.pctNeg)}%)` : ''}</td><td>${f(mt.rom)}</td><td>${mt.validPct}</td>${C ? `<td>${f(c?.rom)}</td>` : ''}</tr>`;
+    }
+  }
+  const asym = asymmetry(R).map(a => `<tr><td>${a.label}</td><td>${f(a.R)}</td><td>${f(a.L)}</td><td>${a.asymPct.toFixed(0)}%</td></tr>`).join('');
+  const snaps = MOVES.filter(m => R[m.id]?.snapshots?.pos).map(m => `<figure style="display:inline-block;margin:4px;width:180px"><img src="${R[m.id].snapshots.pos}" style="width:100%"><figcaption style="font-size:11px">${escH(en ? m.en : m.zh)}</figcaption></figure>`).join('');
+  return `<section><h2>ROM</h2><table><tr><th>${t('romMove')}</th><th>${t('side')}</th><th>+ (${t('norm')})</th><th>− (${t('norm')})</th><th>${t('romTotal')}</th><th>${t('validPct')}</th>${C ? `<th>${t('preRom')}</th>` : ''}</tr>${rows}</table>
+    ${asym ? `<h3>${t('asym')}</h3><table><tr><th></th><th>${t('right')}</th><th>${t('left')}</th><th>${t('asymPct')}</th></tr>${asym}</table>` : ''}
+    <p class="qc">${en ? 'Angles relative to the first 1.5 s of still standing (0°). Norms: AAOS; cervical per lecture P138; shoulder adduction per Magee. 2D projection — keep the moving limb parallel to the camera.' : '角度相對開始 1.5 秒靜止站姿（0°）。常模：AAOS；頸椎依講義 P138；肩內收依 Magee。2D 投影量測，動作肢段需與鏡頭平行。'}</p>${snaps}</section>`;
 }
 
 const f2 = x => (Number.isFinite(x) ? x.toFixed(1) : '–');
@@ -97,7 +131,7 @@ img.chart{max-width:100%;margin:8px 0;border:1px solid #eee}section{page-break-i
 <h1>${t('reportTitle')}</h1>
 <p>${t('subject')}: <b>${escH(s.subject)}</b> · ${t('date')}: ${new Date(s.date).toLocaleString()} · ${t('height')}: ${f2(s.height_m * 100)} · ${t('mass')}: ${f2(s.mass_kg)} · ${t('model')}: MediaPipe Pose ${escH(s.model)} · ${t('plumbStatus')}: ${escH(s.plumbMode)}</p>
 ${compare ? `<p>${en ? 'Compared with' : '比較對象'}: ${new Date(compare.date).toLocaleString()}</p>` : ''}
-${sec}${imgs ? `<section><h2>${en ? 'Charts' : '圖表'}</h2>${imgs}</section>` : ''}
+${sec}${romSection(s, compare)}${imgs ?`<section><h2>${en ? 'Charts' : '圖表'}</h2>${imgs}</section>` : ''}
 <section><h2>${t('method')}</h2><p>${en
     ? 'MediaPipe Pose Landmarker (33 landmarks, local inference). Low-visibility points (< threshold) removed, gaps filled by natural cubic spline, resampled to 30 Hz, moving-average smoothed; derivatives by Savitzky–Golay. Scale from stature (eye height = 0.936 × stature). Angles relative to the calibrated plumb line; anatomical convention (neutral = 0°). COM by Winter (2009) segment parameters.'
     : 'MediaPipe Pose Landmarker（33 點，本機推論）。可信度低於閾值的點視為缺值，以自然三次樣條內插並重取樣至 30 Hz，再以移動平均平滑；速度/加速度以 Savitzky–Golay 導數求得。比例尺以身高換算（眼高 = 0.936 × 身高）。角度以校正後鉛垂線為基準、解剖學定義（中立 = 0°）。COM 依 Winter (2009) 節段參數。'}</p>

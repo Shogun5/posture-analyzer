@@ -35,6 +35,18 @@ button.ghost { background: transparent; color: inherit; border-color: currentCol
 .stage { position: relative; width: 100%; max-width: 900px; margin: 0 auto; background: #000; border-radius: 12px; overflow: hidden; }
 .stage video { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .stage canvas { display: block; width: 100%; height: auto; max-height: 72vh; object-fit: contain; touch-action: manipulation; }
+/* ROM 示範動畫：疊在影像右上角，遠處受測者也看得到 */
+.romdemo { position: absolute; top: 8px; right: 8px; width: 34%; max-width: 280px; min-width: 130px; height: auto; pointer-events: none; }
+.romdemo[hidden] { display: none; }
+.romlist { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 4px 16px; margin-bottom: 8px; }
+.romlist h4 { grid-column: 1 / -1; margin: 8px 0 0; color: var(--muted); font-size: 13px; }
+.romlist label { display: flex; gap: 8px; align-items: center; min-height: 32px; }
+.tbl td.low { color: var(--bad); font-weight: 700; }
+.tbl td.warn { color: var(--warn); font-weight: 700; }
+.snaps { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.snaps figure { margin: 0; max-width: 200px; }
+.snaps img { width: 100%; border-radius: 6px; border: 1px solid var(--line); }
+.snaps figcaption { font-size: 12px; color: var(--muted); }
 .msg { position: absolute; left: 0; right: 0; bottom: 0; padding: 8px 12px; background: rgba(0,0,0,.55); color: #fff; font-size: 16px; text-align: center; min-height: 1em; }
 .msg:empty { display: none; }
 .status { font: 12px/1.5 ui-monospace, monospace; color: var(--muted); margin: 8px 0; word-break: break-word; }

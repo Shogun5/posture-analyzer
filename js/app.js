@@ -10,8 +10,10 @@ import * as store from './storage.js';
 import { timeSeries, trend, chartPNG, summaryTable } from './charts.js';
 import { downloadCSV, downloadVideos, download, dataURLtoBlob, reportHTML, KEY_VARS } from './export.js';
 import { sgDerivative } from './filters.js';
+import { MOVES, BASE_SEC, timeline, demoValueAt, cueText, analyzeRom, asymmetry } from './rom.js';
+import { createDemo } from './romdemo.js';
 
-export const APP_VERSION = '1.0.4'; // 與 sw.js 的 CACHE 版本一起更新
+export const APP_VERSION = '1.1.0'; // 與 sw.js 的 CACHE 版本一起更新
 
 const $ = s => document.querySelector(s);
 const fin = Number.isFinite;
@@ -64,7 +66,7 @@ function recoverFromCrash() {
 // ---------------- 狀態 ----------------
 const S = {
   pose: null, poseVariant: null, stream: null, looping: false, lastTs: 0, fpsEMA: 0,
-  phase: 'idle', guided: false, viewIdx: 0,
+  phase: 'idle', guided: false, viewIdx: 0, mode: 'posture', rom: null,
   up: [0, -1], plumbMode: 'none', manualPts: null, tilt: NaN,
   liveScale: NaN, hist: [], trails: { COM: [], hipMid: [], R_heel: [], head: [] },
   okSince: 0, lastCue: 0, readyAnnounced: false, gestureSince: 0,
@@ -101,7 +103,7 @@ async function startCamera() {
     video.setAttribute('playsinline', ''); video.muted = true;    // iOS 必要
     await video.play();
     await ensureModel();
-    $('#guideBtn').disabled = false; $('#capBtn').disabled = false;
+    $('#guideBtn').disabled = false; $('#capBtn').disabled = false; $('#romBtn').disabled = false;
     crumb('live');
     if (!S.looping) { S.looping = true; requestAnimationFrame(loop); }
   } catch (e) { crumb('idle'); toast(t('camErr') + e.message); console.error(e); }
@@ -138,7 +140,7 @@ function loop(now) {
   let det = null;
   // 不需鏡像修正時直接把 video 交給模型（MediaPipe 的標準用法）；需要時才用翻轉後的畫布
   try { det = detect(S.pose, cfg.mirrorFix ? canvas : video, now, W, H); } catch (e) { console.warn(e); }
-  const view = curView();
+  const view = S.mode === 'rom' ? romMove().view : curView();
   const detView = det ? detectView(det.norm) : null;
   let lm = det?.lm ?? null, swapped = false;
   if (lm) ({ lm, swapped } = enforceLR(lm, view));
@@ -169,25 +171,26 @@ function loop(now) {
     vel = { p: tr[tr.length - 1], v: [vx[10], vy[10]] };
   }
 
-  stepStateMachine(now, det, detView, lm);
+  if (S.mode === 'rom') stepRom(now, det, detView, vars); else stepStateMachine(now, det, detView, lm);
 
   // 記錄
   if (S.phase === 'record' && det) S.recFrames.push({ t: now / 1000, lm, wlm: det.wlm, swapped });
 
   const panel = [];
-  if (vars) for (const k of KEY_VARS[view].slice(0, 9)) if (fin(vars[k])) panel.push([k.replace(/_(deg|cm|m)$/, ''), `${vars[k].toFixed(1)}${k.endsWith('_deg') ? '°' : k.endsWith('_cm') ? 'cm' : 'm'}`]);
+  if (S.mode === 'rom') panel.push(...romPanel());
+  else if (vars) for (const k of KEY_VARS[view].slice(0, 9)) if (fin(vars[k])) panel.push([k.replace(/_(deg|cm|m)$/, ''), `${vars[k].toFixed(1)}${k.endsWith('_deg') ? '°' : k.endsWith('_cm') ? 'cm' : 'm'}`]);
   let banner = '';
   if (S.phase === 'countdown') banner = String(Math.max(0, Math.ceil((S.countdownEnd - now) / 1000)));
   if (S.phase === 'record') banner = `REC ${((now - S.recStart) / 1000).toFixed(1)} s`;
   drawOverlay(ctx, { lm, view, up: S.up, scale: S.liveScale, vars, trails: S.trails, vel, height_m: cfg.height_cm / 100, visThr: cfg.visThr, panel, banner });
   if (S.phase === 'record' && !S.runningMarked) { S.runningMarked = true; crumb('rec_running'); }
 
-  // 快照：記錄中段
-  if (S.phase === 'record' && !S.snapTaken && now - S.recStart > cfg.captureSec * 500) {
+  // 快照：記錄中段（姿勢模式；ROM 模式在口令「停住」結束時拍）
+  if (S.mode !== 'rom' && S.phase === 'record' && !S.snapTaken && now - S.recStart > cfg.captureSec * 500) {
     S.snapTaken = true;
     if (!cfg.noSnapshot) { crumb('rec_snapshot'); S.snapshot = canvas.toDataURL('image/jpeg', 0.85); crumb('rec_running'); }
   }
-  if (S.phase === 'record' && now - S.recStart >= cfg.captureSec * 1000) finishRecording();
+  if (S.mode !== 'rom' && S.phase === 'record' && now - S.recStart >= cfg.captureSec * 1000) finishRecording();
   renderStatus(detView);
 }
 
@@ -309,8 +312,154 @@ async function finishRecording() {
   } else setPhase('idle');
 }
 
+// ---------------- ROM 測試 ----------------
+// 流程（每個動作）：intro（語音說明 + 示範動畫循環）→ align（朝向、相關關節入鏡、靜止）
+//   → countdown 3 s → record（口令時間軸 + 示範同步；開始 1.5 s 為 0° 基準）→ 分析 → 下一個動作
+const romDemo = createDemo($('#romDemo'));
+const romMove = () => S.rom.list[S.rom.idx];
+const romName = m => (getLang() === 'en' ? m.en : m.zh);
+const avg = a => a.reduce((s, x) => s + x, 0) / a.length;
+
+function startRomTest() {
+  unlockAudio();
+  if (!S.pose) { toast(t('cameraOff')); return; }
+  const list = MOVES.filter(m => !cfg.romSel || cfg.romSel.includes(m.id));
+  if (!list.length) { toast(t('romNone')); showTab('rom'); return; }
+  S.mode = 'rom'; S.guided = false;
+  S.session = newSession(); S.session.rom = {};
+  S.rom = { list, idx: 0, phaseStart: 0, cueIdx: 0, live: {}, snaps: {} };
+  $('#romDemo').toggleAttribute('hidden', false); // SVG 元素沒有 .hidden 屬性
+  speak(v('romIntro'), { interrupt: true });
+  enterRomIntro(true);
+}
+function enterRomIntro(queue = false) {
+  const m = romMove();
+  S.viewIdx = VIEWS.indexOf(m.view);
+  setPhase('intro'); S.rom.phaseStart = performance.now();
+  const intro = getLang() === 'en' ? m.introEn : m.introZh;
+  speak(`${S.rom.idx + 1}. ${romName(m)}。${intro}`, { interrupt: !queue });
+}
+function endRomTest(completed) {
+  S.mode = 'posture'; setPhase('idle'); $('#romDemo').toggleAttribute('hidden', true); $('#msg').textContent = '';
+  if (completed) say('romAllDone');
+  if (S.session?.rom && Object.keys(S.session.rom).length) { saveCurrent(true); renderRom(); if (completed) showTab('rom'); }
+}
+// 對位：方向正確、此動作相關的關鍵點都入鏡、身體靜止
+function romAlignCue(det, detView, m) {
+  if (!det) return 'noPerson';
+  const n = det.norm;
+  if (m.lm.some(i => n[i][3] < cfg.visThr || n[i][0] < 0.01 || n[i][0] > 0.99 || n[i][1] < 0.01 || n[i][1] > 0.99)) return 'backUp';
+  if (detView !== m.view) return `turn_${m.view}`;
+  const h = S.hist.slice(-15);
+  if (h.length < 10) return 'still';
+  const xs = h.map(e => (e.n[23][0] + e.n[24][0]) / 2), ys = h.map(e => (e.n[23][1] + e.n[24][1]) / 2);
+  if (Math.max(...xs) - Math.min(...xs) > 0.015 || Math.max(...ys) - Math.min(...ys) > 0.015) return 'still';
+  return null;
+}
+function stepRom(now, det, detView, vars) {
+  const m = romMove(), lang = getLang(), { keys, duration } = timeline(m);
+  let demoT = ((now - S.rom.phaseStart) / 1000) % duration;   // intro/align：示範動畫循環播放
+  if (S.phase === 'intro') {
+    if (now - S.rom.phaseStart > 2500 && !isSpeaking()) { setPhase('align'); S.okSince = 0; S.lastCue = now; }
+  } else if (S.phase === 'align') {
+    const cue = romAlignCue(det, detView, m);
+    $('#msg').textContent = cue ? v(cue) : '✓';
+    if (cue) { S.okSince = 0; if (now - S.lastCue > 3500 && !isSpeaking()) { say(cue); S.lastCue = now; } }
+    else { S.okSince ||= now; if (now - S.okSince > 800) { S.countdownEnd = now + 3000; S.lastCount = -1; crumb('countdown'); setPhase('countdown'); } }
+  } else if (S.phase === 'countdown') {
+    demoT = 0;
+    const left = Math.ceil((S.countdownEnd - now) / 1000);
+    if (left !== S.lastCount && left > 0) { S.lastCount = left; beep(660, 120); speak(v('nums')[left]); }
+    if (now >= S.countdownEnd) startRomRecording(now);
+  } else if (S.phase === 'record') {
+    const el = (now - S.recStart) / 1000;
+    demoT = el;                                                  // 示範動畫與口令同步
+    while (S.rom.cueIdx < keys.length && keys[S.rom.cueIdx].t <= el) {
+      const k = keys[S.rom.cueIdx++];
+      if (!k.cue) continue;
+      const txt = cueText(m, k.cue, lang);
+      speak(txt, { interrupt: true }); $('#msg').textContent = txt;
+      if (k.cue === 'back') romSnap('pos'); else if (k.cue === 'back2') romSnap('neg');
+    }
+    // 即時角度（相對開始 1.5 s 的靜態基準）
+    for (const vd of m.vars) {
+      const x = vars?.[vd.name]; if (!fin(x)) continue;
+      const val = (vd.sign ?? 1) * x, L = (S.rom.live[vd.name] ??= { base: [], cur: NaN, max: -Infinity, min: Infinity });
+      if (el < BASE_SEC) L.base.push(val);
+      L.cur = val - (L.base.length ? avg(L.base) : val);
+      if (el >= BASE_SEC) { L.max = Math.max(L.max, L.cur); L.min = Math.min(L.min, L.cur); }
+    }
+    if (el >= duration) finishRomRecording();
+  } else if (S.phase === 'done') demoT = 0;
+  const dv = demoValueAt(m, demoT);
+  romDemo.render(m.view, m.demo(dv), m, `${S.rom.idx + 1}/${S.rom.list.length}  ${romName(m)}`, m.arcs.map(() => dv));
+}
+function romPanel() {
+  if (!S.rom) return [];
+  const m = romMove(), rows = [[`${S.rom.idx + 1}/${S.rom.list.length}`, romName(m)]];
+  for (const vd of m.vars) {
+    const L = S.rom.live[vd.name];
+    const f = x => (fin(x) ? `${x.toFixed(0)}°` : '–');
+    rows.push([`${vd.side || ''} ${getLang() === 'en' ? 'now' : '目前'}`, f(L?.cur)], [`${vd.side || ''} max / min`, `${f(L?.max)} / ${f(L?.min)}`]);
+  }
+  return rows;
+}
+function romSnap(key) {
+  if (cfg.noSnapshot) return;
+  crumb('rec_snapshot'); S.rom.snaps[key] = canvas.toDataURL('image/jpeg', 0.8); crumb('rec_running');
+}
+function startRomRecording(now) {
+  crumb('rec_audio');
+  if (!cfg.quietRec) beep(1046, 250);
+  S.recFrames = []; S.recStart = now; S.rom.cueIdx = 0; S.rom.live = {}; S.rom.snaps = {}; S.runningMarked = false;
+  S.recorder = new CanvasRecorder(canvas, 30, cfg.videoFmt);
+  crumb('rec_recorder', { mime: S.recorder.mime });
+  try { S.recorder.start(); } catch (e) { console.warn('recorder', e); S.recorder = null; }
+  setPhase('record');
+}
+async function finishRomRecording() {
+  setPhase('done');
+  const m = romMove();
+  let clip = null;
+  try { clip = await S.recorder?.stop(); } catch (e) { console.warn(e); }
+  crumb('process');
+  if (S.recFrames.length >= 10) {
+    try {
+      const res = analyzeRom(m, S.recFrames, { W: canvas.width, H: canvas.height, up: S.up, height_m: cfg.height_cm / 100, mass_kg: cfg.mass_kg, visThr: cfg.visThr });
+      res.snapshots = S.rom.snaps; res.video = clip; res.date = new Date().toISOString();
+      S.session.rom[m.id] = res; S.viewSession = S.session;
+      // 語音報告結果，例如「右肩 屈曲 165 度，伸展 48 度」
+      const parts = Object.values(res.metrics).map(mt => {
+        const side = mt.side === 'R' ? t('right') : mt.side === 'L' ? t('left') : '';
+        const p = getLang() === 'en' ? m.pos.en : m.pos.zh, n = m.neg ? (getLang() === 'en' ? m.neg.en : m.neg.zh) : '';
+        return `${side} ${p} ${fin(mt.pos) ? Math.round(mt.pos) : '-'} ${v('deg')}${m.neg ? `，${n} ${fin(mt.neg) ? Math.round(-mt.neg) : '-'} ${v('deg')}` : ''}`;
+      });
+      speak(parts.join('；'), { interrupt: true });
+      renderRom();
+    } catch (e) { console.error(e); toast(`ROM error: ${e.message}`); }
+  } else toast('Too few frames');
+  crumb('live');
+  S.rom.idx++;
+  if (S.mode !== 'rom') return;                       // 使用者已停止
+  if (S.rom.idx < S.rom.list.length) setTimeout(() => { if (S.mode === 'rom') enterRomIntro(true); }, 1500);
+  else endRomTest(true);
+}
+function romCommand(cmd) {
+  if (cmd === 'capture') { if (S.phase === 'intro' || S.phase === 'align') { S.countdownEnd = performance.now() + 3000; S.lastCount = -1; setPhase('countdown'); } }
+  else if (cmd === 'next') { if (S.phase === 'record') return; S.rom.idx++; if (S.rom.idx < S.rom.list.length) enterRomIntro(); else endRomTest(true); }
+  else if (cmd === 'retake') {
+    if (S.phase === 'record') return;
+    // 剛做完下一個動作的說明階段（6 秒內）→ 回到上一個動作重做
+    if (S.phase === 'intro' && S.rom.idx > 0 && performance.now() - S.rom.phaseStart < 6000) S.rom.idx--;
+    enterRomIntro();
+  }
+  else if (cmd === 'stop') { S.recorder?.stop(); speechSynthesis.cancel(); endRomTest(false); }
+  else if (cmd === 'repeat') enterRomIntro();
+}
+
 // 指令（語音/按鈕共用）
 function command(cmd) {
+  if (S.mode === 'rom') { romCommand(cmd); return; }
   if (cmd === 'capture') { if (S.phase === 'align' || S.phase === 'idle') startCountdown(); }
   else if (cmd === 'next') { S.viewIdx = (S.viewIdx + 1) % 4; if (S.guided) enterAlign(); else renderChips(); }
   else if (cmd === 'retake') { if (S.phase !== 'record') { S.guided = true; enterAlign(); } }
@@ -427,7 +576,7 @@ async function drawChart() {
 
 // ---------------- 儲存 / 基準 / 匯出 ----------------
 async function saveCurrent(silent) {
-  if (!S.session || !Object.keys(S.session.views).length) { toast(t('noSession')); return; }
+  if (!S.session || (!Object.keys(S.session.views).length && !Object.keys(S.session.rom || {}).length)) { toast(t('noSession')); return; }
   await store.saveSession(S.session);
   if (!silent) toast(t('saved')); else toast(`${t('saved')} ✓`);
   renderHistory();
@@ -455,16 +604,80 @@ $('#reportBtn').onclick = () => {
   if (!w) toast('HTML downloaded');
 };
 
+// ---------------- ROM 分頁 ----------------
+function renderRomChecklist() {
+  const sel = cfg.romSel ?? MOVES.map(m => m.id);
+  let html = '', lastView = '';
+  for (const m of MOVES) {
+    if (m.view !== lastView) { lastView = m.view; html += `<h4>${t('view_' + m.view)}</h4>`; }
+    const norms = `${getLang() === 'en' ? m.pos.en : m.pos.zh} ${m.pos.norm}°${m.neg ? ` / ${getLang() === 'en' ? m.neg.en : m.neg.zh} ${m.neg.norm}°` : ''}`;
+    html += `<label><input type="checkbox" data-id="${m.id}" ${sel.includes(m.id) ? 'checked' : ''}><span>${romName(m)} <small class="hint">(${norms})</small></span></label>`;
+  }
+  $('#romChecklist').innerHTML = html;
+}
+$('#romChecklist').addEventListener('change', () => {
+  cfg.romSel = [...document.querySelectorAll('#romChecklist input:checked')].map(i => i.dataset.id); saveCfg();
+});
+$('#romAllBtn').onclick = () => { cfg.romSel = MOVES.map(m => m.id); saveCfg(); renderRomChecklist(); };
+$('#romNoneBtn').onclick = () => { cfg.romSel = []; saveCfg(); renderRomChecklist(); };
+
+function renderRom() {
+  const s = S.viewSession, R = s?.rom, C = S.compare?.rom;
+  const ids = R ? MOVES.map(m => m.id).filter(id => R[id]) : [];
+  if (!ids.length) { $('#romInfo').textContent = t('romNone'); $('#romTable').innerHTML = ''; $('#romAsym').innerHTML = ''; $('#romSnaps').innerHTML = ''; $('#romSel').innerHTML = ''; return; }
+  $('#romInfo').textContent = `${s.subject} · ${new Date(s.date).toLocaleString()}${C ? ` · ${t('preRom')}: ${S.compare.date.slice(0, 10)}` : ''}`;
+  const f = x => (fin(x) ? x.toFixed(0) : '–');
+  const pctCell = p => `<td class="${fin(p) && p < 75 ? 'low' : fin(p) && p < 90 ? 'warn' : ''}">${fin(p) ? p.toFixed(0) + '%' : '–'}</td>`;
+  const en = getLang() === 'en';
+  const head = `<tr><th>${t('romMove')}</th><th>${t('side')}</th><th>${t('direction')}</th><th>${t('peak')}</th><th>${t('norm')}</th><th>${t('pctNorm')}</th><th>${t('direction')}</th><th>${t('peak')}</th><th>${t('norm')}</th><th>${t('pctNorm')}</th><th>${t('romTotal')}</th><th>${t('validPct')}</th>${C ? `<th>${t('preRom')}</th><th>Δ</th>` : ''}</tr>`;
+  let rows = '';
+  for (const id of ids) {
+    const m = MOVES.find(x => x.id === id);
+    for (const [vn, mt] of Object.entries(R[id].metrics)) {
+      const c = C?.[id]?.metrics?.[vn];
+      rows += `<tr><td>${romName(m)}</td><td>${mt.side ? t(mt.side === 'R' ? 'right' : 'left') : ''}</td><td>${en ? m.pos.en : m.pos.zh}</td><td>${f(mt.pos)}</td><td>${m.pos.norm}</td>${pctCell(mt.pctPos)}`
+        + (m.neg ? `<td>${en ? m.neg.en : m.neg.zh}</td><td>${f(-mt.neg)}</td><td>${m.neg.norm}</td>${pctCell(mt.pctNeg)}` : '<td></td><td></td><td></td><td></td>')
+        + `<td>${f(mt.rom)}</td><td>${mt.validPct}</td>${C ? `<td>${f(c?.rom)}</td><td>${fin(c?.rom) ? (mt.rom - c.rom >= 0 ? '+' : '') + (mt.rom - c.rom).toFixed(0) : '–'}</td>` : ''}</tr>`;
+    }
+  }
+  $('#romTable').innerHTML = `<table class="tbl">${head}${rows}</table><p class="hint">%常模 &lt; 75% 紅色、&lt; 90% 橘色。常模：AAOS；頸椎依講義 P138；肩內收依 Magee。</p>`;
+  const asym = asymmetry(R);
+  $('#romAsym').innerHTML = asym.length ? `<table class="tbl"><tr><th>${t('romMove')}</th><th>${t('right')}</th><th>${t('left')}</th><th>${t('asymPct')}</th></tr>${asym.map(a => `<tr><td>${a.label}</td><td>${f(a.R)}</td><td>${f(a.L)}</td><td class="${a.asymPct > 15 ? 'low' : a.asymPct > 10 ? 'warn' : ''}">${a.asymPct.toFixed(0)}%</td></tr>`).join('')}</table>` : '';
+  const prev = $('#romSel').value;
+  $('#romSel').innerHTML = ids.map(id => `<option value="${id}" ${id === prev ? 'selected' : ''}>${romName(MOVES.find(x => x.id === id))}</option>`).join('');
+  $('#romSnaps').innerHTML = ids.flatMap(id => Object.entries(R[id].snapshots || {}).map(([k, u]) => {
+    const m = MOVES.find(x => x.id === id), d = k === 'pos' ? m.pos : m.neg;
+    return `<figure><img src="${u}" alt=""><figcaption>${romName(m)} · ${en ? d.en : d.zh}</figcaption></figure>`;
+  })).join('');
+  drawRomChart();
+}
+function drawRomChart() {
+  const R = S.viewSession?.rom, id = $('#romSel').value; if (!R?.[id]) return;
+  const res = R[id], series = Object.entries(res.series).map(([vn, y]) => ({ label: `${vn.replace(/_deg$/, '')} Δ`, t: res.t, y }));
+  const c = S.compare?.rom?.[id];
+  if (c && series.length < 3) { const [vn, y] = Object.entries(c.series)[0]; series.push({ label: `${vn.replace(/_deg$/, '')} (${S.compare.date.slice(0, 10)})`, t: c.t, y, dash: true }); }
+  timeSeries($('#romChart'), series, 'Δ angle (°)');
+}
+$('#romSel').addEventListener('change', drawRomChart);
+$('#romCsvBtn').onclick = () => (S.viewSession ? downloadCSV(S.viewSession, cfg.rawLm) : toast(t('noSession')));
+$('#romVideoBtn').onclick = () => (S.viewSession ? downloadVideos(S.viewSession) : toast(t('noSession')));
+$('#romPngBtn').onclick = async () => { const u = chartPNG($('#romChart')); if (u) download(await dataURLtoBlob(u), `rom_${$('#romSel').value}.png`); };
+$('#romReportBtn').onclick = () => $('#reportBtn').onclick();
+$('#romBtn').onclick = startRomTest;
+
 // ---------------- 歷史 ----------------
 async function renderHistory() {
   const list = (await store.listSessions()).reverse();
-  $('#historyList').innerHTML = list.length ? list.map(s => `<div class="hist"><div><b>${s.subject}</b> · ${new Date(s.date).toLocaleString()}<br><small>${VIEWS.filter(vw => s.views?.[vw]).map(vw => t('view_' + vw)).join('、')}</small></div>
+  $('#historyList').innerHTML = list.length ? list.map(s => `<div class="hist"><div><b>${s.subject}</b> · ${new Date(s.date).toLocaleString()}<br><small>${VIEWS.filter(vw => s.views?.[vw]).map(vw => t('view_' + vw)).join('、')}${s.rom && Object.keys(s.rom).length ? ` · ROM ×${Object.keys(s.rom).length}` : ''}</small></div>
     <div class="btns small"><button data-act="load" data-id="${s.id}">${t('btnLoad')}</button><button data-act="cmp" data-id="${s.id}">${t('btnCompare')}</button><button data-act="del" data-id="${s.id}">${t('btnDelete')}</button></div></div>`).join('') : `<p class="hint">${t('noSession')}</p>`;
 }
 $('#historyList').addEventListener('click', async e => {
   const b = e.target.closest('button'); if (!b) return;
   const s = await store.getSession(b.dataset.id); if (!s) return;
-  if (b.dataset.act === 'load') { S.viewSession = s; S.baseline = (await store.getBaseline(s.subject)) ?? null; showTab('results'); renderResults(); }
+  if (b.dataset.act === 'load') {
+    S.viewSession = s; S.baseline = (await store.getBaseline(s.subject)) ?? null;
+    showTab(Object.keys(s.views || {}).length ? 'results' : 'rom');   // 只有 ROM 的紀錄直接開 ROM 分頁
+  }
   if (b.dataset.act === 'cmp') { S.compare = s; toast(`${t('btnCompare')}: ${s.date.slice(0, 10)}`); }
   if (b.dataset.act === 'del' && confirm(t('confirmDelete'))) { await store.deleteSession(s.id); toast(t('deleted')); renderHistory(); }
 });
@@ -508,6 +721,7 @@ function showTab(name) {
   document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
   document.querySelectorAll('.tab').forEach(s => s.classList.toggle('on', s.id === `tab-${name}`));
   if (name === 'results') renderResults(); if (name === 'history') renderHistory();
+  if (name === 'rom') { renderRomChecklist(); renderRom(); }
 }
 document.querySelector('.tabs').addEventListener('click', e => { const b = e.target.closest('button'); if (b) showTab(b.dataset.tab); });
 function applyLang() {

@@ -29,6 +29,7 @@
   <nav class="tabs">
     <button data-tab="capture" class="on" data-i18n="tabCapture">拍攝</button>
     <button data-tab="results" data-i18n="tabResults">結果</button>
+    <button data-tab="rom" data-i18n="tabRom">ROM</button>
     <button data-tab="history" data-i18n="tabHistory">歷史</button>
     <button data-tab="settings" data-i18n="tabSettings">設定</button>
   </nav>
@@ -40,6 +41,8 @@
       <!-- iOS Safari 必須 playsinline + muted 才能內嵌播放相機 -->
       <video id="video" playsinline muted autoplay></video>
       <canvas id="stage"></canvas>
+      <!-- ROM 測試示範動畫（SVG 向量人形） -->
+      <svg id="romDemo" class="romdemo" hidden></svg>
       <div id="msg" class="msg"></div>
     </div>
     <div id="status" class="status"></div>
@@ -47,6 +50,7 @@
       <button id="camBtn" class="primary" data-i18n="btnCamera">開啟相機</button>
       <button id="flipBtn" data-i18n="btnFlip">🔄 切換前/後鏡頭</button>
       <button id="guideBtn" class="primary" data-i18n="btnStartSession" disabled>開始引導拍攝</button>
+      <button id="romBtn" class="primary" data-i18n="btnRom" disabled>開始 ROM 測試</button>
       <button id="capBtn" data-i18n="btnCaptureNow" disabled>立即拍攝</button>
       <button id="nextBtn" data-i18n="btnNext">下一個方向</button>
       <button id="retakeBtn" data-i18n="btnRetake">重拍</button>
@@ -95,6 +99,28 @@
         <div id="summary" class="scroll"></div>
       </div>
     </div>
+  </section>
+
+  <!-- ROM 測試 -->
+  <section id="tab-rom" class="tab">
+    <p class="hint" data-i18n="romHint"></p>
+    <h3 data-i18n="romSelect">測試動作</h3>
+    <div class="btns small"><button id="romAllBtn" data-i18n="selectAll">全選</button><button id="romNoneBtn" data-i18n="selectNone">全不選</button></div>
+    <div id="romChecklist" class="romlist"></div>
+    <h3 data-i18n="romResults">ROM 結果</h3>
+    <p id="romInfo" class="hint"></p>
+    <div id="romTable" class="scroll"></div>
+    <h3 data-i18n="asym">左右差異</h3>
+    <div id="romAsym" class="scroll"></div>
+    <div class="row wrap"><label><span data-i18n="romMove">動作</span> <select id="romSel"></select></label></div>
+    <div class="chartbox"><canvas id="romChart"></canvas></div>
+    <div class="btns small">
+      <button id="romCsvBtn" data-i18n="btnCSV">下載 CSV</button>
+      <button id="romVideoBtn" data-i18n="btnVideo">下載影片</button>
+      <button id="romPngBtn" data-i18n="btnPNG">下載圖表 PNG</button>
+      <button id="romReportBtn" data-i18n="btnReport">HTML/PDF 報告</button>
+    </div>
+    <div id="romSnaps" class="snaps"></div>
   </section>
 
   <!-- 歷史 -->
