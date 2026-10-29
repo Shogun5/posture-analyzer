@@ -16,7 +16,7 @@
  * 驗證後導回 App：<appUrl>#session=...（iPhone 主畫面 App 彈出視窗不穩時使用）
  */
 
-const CLIENT_ID = 'PASTE_YOUR_CLIENT_ID.apps.googleusercontent.com';   // 與 js/config.js 相同
+const CLIENT_ID = '822559901418-kei8as7i6qemq2797dtoqsqb557g2j22.apps.googleusercontent.com';   // 與 js/config.js 相同
 const APP_URL = 'https://shogun5.github.io/posture-analyzer/';           // 跳轉登入完成後回到的網址
 const SESSION_DAYS = 30;                                                 // 登入有效天數（每次開啟仍會線上複查）
 

@@ -4,6 +4,6 @@
 // 這兩個值都不是機密（會出現在網頁原始碼中），真正的名單與簽章密鑰存在 Google Sheet / Apps Script。
 export const AUTH = {
   enabled: true,
-  clientId: 'PASTE_YOUR_CLIENT_ID.apps.googleusercontent.com',
-  scriptUrl: 'PASTE_YOUR_APPS_SCRIPT_EXEC_URL',
+  clientId: '822559901418-kei8as7i6qemq2797dtoqsqb557g2j22.apps.googleusercontent.com',
+  scriptUrl: 'https://script.google.com/macros/s/AKfycbwN-5xcttYQAEXyJksQkfIhC2XC_GQhUBwN_r5MpCQk0siFal2iLqQj9I9ISUDe6YL1/exec',
 };
