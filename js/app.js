@@ -12,8 +12,9 @@ import { downloadCSV, downloadVideos, download, dataURLtoBlob, reportHTML, KEY_V
 import { sgDerivative } from './filters.js';
 import { MOVES, BASE_SEC, timeline, demoValueAt, cueText, analyzeRom, asymmetry } from './rom.js';
 import { createDemo } from './romdemo.js';
+import { requireAuth, signOut, useRedirectMode } from './auth.js';
 
-export const APP_VERSION = '1.1.0'; // 與 sw.js 的 CACHE 版本一起更新
+export const APP_VERSION = '1.2.0'; // 與 sw.js 的 CACHE 版本一起更新
 
 const $ = s => document.querySelector(s);
 const fin = Number.isFinite;
@@ -86,6 +87,7 @@ const say = (key, opts) => speak(v(key), opts);
 
 // ---------------- 相機 ----------------
 async function startCamera() {
+  if (!S.user) return;          // 未通過登入驗證不得開啟相機
   unlockAudio();
   if (!window.isSecureContext) { toast(t('needHttps')); return; }
   try {
@@ -772,6 +774,26 @@ $('#voiceBtn').onclick = () => {
   $('#voiceBtn').textContent = t(S.voiceOn ? 'btnVoiceOn' : 'btnVoiceOff');
 };
 
+// ---------------- 登入閘門 UI ----------------
+const gateUI = {
+  state: '', buttonEl: $('#gsiBtn'), get lang() { return getLang(); },
+  show(state, detail, email) {
+    this.state = state;
+    $('#gate').classList.remove('hidden');
+    const el = $('#gateMsg');
+    let msg = t(`gate_${state}`);
+    if (state === 'denied') msg = (t(`gate_${detail}`) || detail) + (email ? email : '') + (['not_listed', 'disabled', 'expired'].includes(detail) ? t('gate_contact') : '');
+    el.textContent = msg;
+    el.classList.toggle('bad', state === 'denied' || state === 'error' || state === 'setup');
+    $('#gsiBtn').hidden = !['login', 'denied'].includes(state);
+    let redirect = false; try { redirect = localStorage.getItem('pa.authRedirect') === '1'; } catch { /* ignore */ }
+    $('#gateRedirect').textContent = ['login', 'denied'].includes(state) ? t(redirect ? 'gateRedirectOff' : 'gateRedirectOn') : '';
+    $('#gateRedirect').onclick = e => { e.preventDefault(); useRedirectMode(!redirect); };
+  },
+  hide() { this.state = 'ok'; $('#gate').classList.add('hidden'); },
+};
+$('#signOutBtn').onclick = () => signOut();
+
 // ---------------- 啟動 ----------------
 (async function init() {
   const crash = recoverFromCrash();   // 必須在 fillSettings 前，讓自動修正的設定顯示出來
@@ -782,8 +804,6 @@ $('#voiceBtn').onclick = () => {
   }
   try { const lc = JSON.parse(localStorage.getItem('pa.lastCrash') || 'null'); if (lc) $('#crashInfo').textContent = `${t('crashPrev')} ${lc.at}「${t('stage_' + lc.stage)}」${lc.mime ? ' (' + lc.mime + ')' : ''} ${lc.fixes.join(', ')}`; } catch { /* ignore */ }
   $('#verInfo').textContent = `v${APP_VERSION} · MediaPipe tasks-vision ${MP_VERSION} · Chart.js ${window.Chart?.version ?? '?'}`;
-  S.baseline = (await store.getBaseline(cfg.subject).catch(() => null)) ?? null;
-  store.requestPersist();
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     // 註冊 service worker；有新版時自動啟用並重新整理
     navigator.serviceWorker.register('sw.js').then(reg => {
@@ -796,5 +816,13 @@ $('#voiceBtn').onclick = () => {
     navigator.serviceWorker.addEventListener('controllerchange', () => { if (!reloaded) { reloaded = true; location.reload(); } });
   }
   if (location.protocol === 'file:') toast(t('needHttps'));
+
+  // 登入閘門（service worker 已先註冊，被擋的人也能收到更新）；通過前不載入任何資料
+  S.user = await requireAuth(gateUI);
+  gateUI.hide();                     // AUTH.enabled = false 時也要移除閘門
+  $('#userInfo').textContent = S.user?.email ? `${t('signedInAs')}${S.user.name ? S.user.name + ' ' : ''}<${S.user.email}>${S.user.offline ? t('offlineMode') : ''}` : '';
+  $('#signOutBtn').hidden = !S.user?.email;
+  S.baseline = (await store.getBaseline(cfg.subject).catch(() => null)) ?? null;
+  store.requestPersist();
   renderHistory();
 })();

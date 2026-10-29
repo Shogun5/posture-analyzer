@@ -13,6 +13,8 @@ posture-analyzer/
 ├─ icons/icon-192.png    PWA 圖示
 ├─ icons/icon-512.png
 ├─ tools/make-icons.html 圖示產生器（瀏覽器開啟 → 下載 PNG）
+├─ apps-script/Code.gs   登入白名單後端（貼到 Google Sheet 的 Apps Script）
+├─ docs/AUTH_SETUP.md    登入白名單設定步驟
 └─ js/
    ├─ app.js       主控制：相機、30 fps 迴圈、引導拍攝狀態機、語音/手勢、校正、UI
    ├─ pose.js      MediaPipe PoseLandmarker 封裝（GPU→CPU 退回）
