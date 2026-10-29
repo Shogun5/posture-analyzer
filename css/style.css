@@ -76,6 +76,12 @@ select, input, textarea { font: inherit; color: var(--ink); background: var(--bg
 .form label.chk { flex-direction: row; align-items: center; gap: 8px; }
 .form .full, .form .btns, .form .hint { grid-column: 1 / -1; }
 textarea { font: 12px ui-monospace, monospace; width: 100%; }
+/* ECT 模組分頁：iframe 佔滿剩餘高度 */
+.ecttab { padding: 8px 0 0; }
+.ecttab > .row { padding: 0 16px 6px; justify-content: space-between; }
+.ectframe { display: block; width: 100%; height: calc(100vh - 150px); height: calc(100dvh - 150px); border: 0; background: var(--bg); }
+button.small { min-height: 32px; padding: 4px 10px; font-size: 13px; }
+
 /* 登入閘門 */
 .gate { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px;
   background: linear-gradient(135deg, #0a1a33, #0f766e); color: #fff; }

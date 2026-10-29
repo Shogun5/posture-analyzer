@@ -12,7 +12,11 @@ const GIS_SRC = 'https://accounts.google.com/gsi/client';
 export const configured = () => AUTH.enabled && !/^PASTE/.test(AUTH.clientId) && !/^PASTE/.test(AUTH.scriptUrl);
 export function current() { try { return JSON.parse(localStorage.getItem(KEY) || 'null'); } catch { return null; } }
 const save = a => { try { localStorage.setItem(KEY, JSON.stringify(a)); } catch { /* ignore */ } };
-const clear = () => { try { localStorage.removeItem(KEY); } catch { /* ignore */ } };
+// 清除登入時，一併刪除已下載的講義模組（ectmodule.js 的 Cache Storage），避免共用裝置留下內容
+const clear = () => {
+  try { localStorage.removeItem(KEY); } catch { /* ignore */ }
+  try { caches.delete('ect-module'); } catch { /* ignore */ }
+};
 
 async function call(body) {
   // text/plain = 簡單請求，不觸發 CORS 預檢；Apps Script 回應帶 Access-Control-Allow-Origin: *

@@ -40,6 +40,7 @@
     <button data-tab="capture" class="on" data-i18n="tabCapture">拍攝</button>
     <button data-tab="results" data-i18n="tabResults">結果</button>
     <button data-tab="rom" data-i18n="tabRom">ROM</button>
+    <button data-tab="ect" data-i18n="tabEct">ECT 模組</button>
     <button data-tab="history" data-i18n="tabHistory">歷史</button>
     <button data-tab="settings" data-i18n="tabSettings">設定</button>
   </nav>
@@ -131,6 +132,12 @@
       <button id="romReportBtn" data-i18n="btnReport">HTML/PDF 報告</button>
     </div>
     <div id="romSnaps" class="snaps"></div>
+  </section>
+
+  <!-- ECT 互動評估模組（登入後由 Apps Script 下載，不在 GitHub） -->
+  <section id="tab-ect" class="tab ecttab">
+    <div class="row wrap"><span id="ectStatus" class="hint"></span><button id="ectReload" class="ghost small" data-i18n="ectReload">重新下載</button></div>
+    <iframe id="ectFrame" class="ectframe" title="ECT 互動評估模組"></iframe>
   </section>
 
   <!-- 歷史 -->

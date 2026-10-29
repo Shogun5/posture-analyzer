@@ -13,8 +13,9 @@ import { sgDerivative } from './filters.js';
 import { MOVES, BASE_SEC, timeline, demoValueAt, cueText, analyzeRom, asymmetry } from './rom.js';
 import { createDemo } from './romdemo.js';
 import { requireAuth, signOut, useRedirectMode } from './auth.js';
+import { loadModule, wrapModule } from './ectmodule.js';
 
-export const APP_VERSION = '1.2.0'; // 與 sw.js 的 CACHE 版本一起更新
+export const APP_VERSION = '1.3.0'; // 與 sw.js 的 CACHE 版本一起更新
 
 const $ = s => document.querySelector(s);
 const fin = Number.isFinite;
@@ -667,6 +668,21 @@ $('#romPngBtn').onclick = async () => { const u = chartPNG($('#romChart')); if (
 $('#romReportBtn').onclick = () => $('#reportBtn').onclick();
 $('#romBtn').onclick = startRomTest;
 
+// ---------------- ECT 互動評估模組 ----------------
+async function loadEct() {
+  if (!S.user) return;
+  $('#ectStatus').textContent = t('ectLoading');
+  try {
+    const { html, source } = await loadModule();
+    $('#ectFrame').srcdoc = wrapModule(html);
+    S.ectLoaded = true;
+    $('#ectStatus').textContent = t(source === 'net' ? 'ectNet' : source === 'offline' ? 'ectOffline' : 'ectCache');
+  } catch (e) {
+    $('#ectStatus').textContent = e.reason === 'no_module' ? t('ectNoModule') : e.reason ? t('ectDenied') + e.reason : t('ectError') + e.message;
+  }
+}
+$('#ectReload').onclick = () => { S.ectLoaded = false; loadEct(); };
+
 // ---------------- 歷史 ----------------
 async function renderHistory() {
   const list = (await store.listSessions()).reverse();
@@ -724,6 +740,7 @@ function showTab(name) {
   document.querySelectorAll('.tab').forEach(s => s.classList.toggle('on', s.id === `tab-${name}`));
   if (name === 'results') renderResults(); if (name === 'history') renderHistory();
   if (name === 'rom') { renderRomChecklist(); renderRom(); }
+  if (name === 'ect' && !S.ectLoaded) loadEct();
 }
 document.querySelector('.tabs').addEventListener('click', e => { const b = e.target.closest('button'); if (b) showTab(b.dataset.tab); });
 function applyLang() {

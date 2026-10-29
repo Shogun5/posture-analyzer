@@ -1,11 +1,11 @@
 // sw.js — Service worker：預先快取程式、Chart.js、MediaPipe WASM 與 heavy 模型 → 可離線使用
 // 更新程式時：把 CACHE 版本號 +1（並同步 js/app.js 的 APP_VERSION），使用者下次開啟即取得新版。
-const CACHE = 'posture-v1.2.0';
+const CACHE = 'posture-v1.3.0';
 const MP = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
 
 const LOCAL = [
   './', './index.html', './manifest.json', './css/style.css',
-  './js/app.js', './js/config.js', './js/auth.js', './js/i18n.js', './js/pose.js', './js/biomech.js', './js/filters.js', './js/posture.js',
+  './js/app.js', './js/config.js', './js/auth.js', './js/ectmodule.js', './js/i18n.js', './js/pose.js', './js/biomech.js', './js/filters.js', './js/posture.js',
   './js/overlay.js', './js/rom.js', './js/romdemo.js', './js/voice.js', './js/recorder.js', './js/storage.js', './js/charts.js', './js/export.js',
   './icons/icon-192.png', './icons/icon-512.png',
 ];
@@ -29,7 +29,8 @@ self.addEventListener('install', e => {
 
 self.addEventListener('activate', e => {
   e.waitUntil((async () => {
-    for (const k of await caches.keys()) if (k !== CACHE) await caches.delete(k); // 刪除舊版快取
+    // 只刪除舊版程式快取；保留 ect-module（登入後下載的講義模組）
+    for (const k of await caches.keys()) if (k.startsWith('posture-v') && k !== CACHE) await caches.delete(k);
     await self.clients.claim();
   })());
 });

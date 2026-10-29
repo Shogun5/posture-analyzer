@@ -12,6 +12,9 @@
  * API（POST，Content-Type: text/plain，body 為 JSON）：
  *   { action: 'login', idToken }   → 驗證 Google ID token、比對白名單，回傳 { ok, email, name, session, exp }
  *   { action: 'check', session }   → 驗證 session 簽章並重新比對白名單（可即時停權）
+ *   { action: 'module', session, ver } → 已授權才回傳 ECT 互動評估模組（本專案的 HTML 檔「Module」）；
+ *                                        ver 與目前版本相同時只回 { ok, same: true }，不重送內容
+ *   ※ 講義模組只存在這個 Apps Script 專案中，不放在公開的 GitHub。
  * 另外 doPost 也接受 Google Identity Services 的「頁面跳轉」登入（form 欄位 credential），
  * 驗證後導回 App：<appUrl>#session=...（iPhone 主畫面 App 彈出視窗不穩時使用）
  */
@@ -58,6 +61,7 @@ function doPost(e) {
     const body = JSON.parse(e.postData.contents || '{}');
     if (body.action === 'login') return json(login_(body.idToken, 'login', body.ua));
     if (body.action === 'check') return json(check_(body.session, body.ua));
+    if (body.action === 'module') return json(module_(body.session, body.ver, body.ua));
     return json({ ok: false, reason: 'bad_action' });
   } catch (err) {
     return json({ ok: false, reason: 'error', detail: String(err) });
@@ -90,6 +94,20 @@ function check_(session, ua) {
   const user = findUser_(p.email);
   if (!user || !user.allowed) return log_(p.email, 'check', user ? user.reason : 'not_listed', ua, { ok: false, reason: user ? user.reason : 'not_listed' });
   return log_(p.email, 'check', 'ok', ua, { ok: true, email: p.email, name: user.name, exp: p.exp });
+}
+
+/** ECT 互動評估模組：先做與 check 相同的驗證，通過才送出內容 */
+function module_(session, ver, ua) {
+  const c = check_(session, ua);
+  if (!c.ok) return c;
+  let html;
+  try { html = HtmlService.createHtmlOutputFromFile('Module').getContent(); }
+  catch (e) { return { ok: false, reason: 'no_module' }; }   // 尚未建立 Module.html
+  const v = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, html, Utilities.Charset.UTF_8)
+    .map(b => ((b + 256) % 256).toString(16).padStart(2, '0')).join('');
+  if (ver && ver === v) return { ok: true, same: true, ver: v };
+  log_(c.email, 'module', 'sent', ua, null);
+  return { ok: true, ver: v, html: html };
 }
 
 function findUser_(email) {
