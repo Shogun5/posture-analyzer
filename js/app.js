@@ -11,7 +11,7 @@ import { timeSeries, trend, chartPNG, summaryTable } from './charts.js';
 import { downloadCSV, downloadVideos, download, dataURLtoBlob, reportHTML, KEY_VARS } from './export.js';
 import { sgDerivative } from './filters.js';
 
-export const APP_VERSION = '1.0.3'; // 與 sw.js 的 CACHE 版本一起更新
+export const APP_VERSION = '1.0.4'; // 與 sw.js 的 CACHE 版本一起更新
 
 const $ = s => document.querySelector(s);
 const fin = Number.isFinite;
@@ -297,6 +297,8 @@ async function finishRecording() {
   beep(880, 120); say('viewDone', { interrupt: true });
   const nFlags = flags.filter(f => f.sev !== 'info').length;
   toast(`${t('view_' + view)} ✓  ${t('flags')}: ${nFlags}`);
+  // 腳不在畫面：比例尺/原點改用替代方法，下肢與鉛垂偏移指標無法計算 → 畫面與語音提醒
+  if (result.qc.feetVisiblePct < 50) { $('#msg').textContent = t('feetMissing'); say('backUp'); }
   renderResults(view);
   crumb('live');
 
@@ -385,9 +387,13 @@ function renderResults(preferView) {
   const V = s.views[cur], r = V.result;
   const vs = $('#resVar'), prev = vs.value;
   const names = Object.keys(r.filt).sort((a, b) => (KEY_VARS[cur].includes(b) - KEY_VARS[cur].includes(a)) || a.localeCompare(b));
-  vs.innerHTML = names.map(n => `<option ${n === prev ? 'selected' : ''}>${n}</option>`).join('');
+  // 預設選第一個有數值的變數（沿用上次選擇，除非它整段都是缺值）
+  const hasData = n => fin(r.summary[n]?.mean);
+  const pick = names.includes(prev) && hasData(prev) ? prev : names.find(hasData) ?? names[0];
+  vs.innerHTML = names.map(n => `<option ${n === pick ? 'selected' : ''}>${n}</option>`).join('');
   $('#snapshot').src = V.snapshot || '';
-  $('#resInfo').textContent = `${s.subject} · ${new Date(s.date).toLocaleString()} · ${t('qc')}: ${t('fps')} ${r.qc.fps.toFixed(1)}, ${t('validPct')} ${r.qc.validPct_keypoints}%, ${t('swapped')} ${r.qc.swappedFrames}${S.baseline ? ' · ' + t('deltaNote') : ''}`;
+  const q = r.qc;
+  $('#resInfo').textContent = `${s.subject} · ${new Date(s.date).toLocaleString()} · ${t('qc')}: ${t('fps')} ${q.fps.toFixed(1)}, ${t('validPct')} ${q.validPct_keypoints}%, ${t('feetPct')} ${q.feetVisiblePct ?? '-'}%, ${t('scale')} ${q.scale_source ?? '-'}, ${t('swapped')} ${q.swappedFrames}${S.baseline ? ' · ' + t('deltaNote') : ''}${q.feetVisiblePct < 50 ? ' · ⚠ ' + t('feetMissing') : ''}`;
   const lang = getLang();
   $('#flags').innerHTML = V.flags.length ? V.flags.map(f => `<div class="flag ${f.sev}"><b>${lang === 'en' ? f.en : f.zh}</b>${fin(f.value) ? `${t('value')}: ${f.value.toFixed(1)} ${f.unit} (${t('threshold')} ${f.thr}) · ${t(f.sev)} · ` : ''}${t('slides')} ${f.slides}<br><small>${lang === 'en' ? f.tipEn : f.tipZh}</small></div>`).join('') : `<p>${t('noFlags')}</p>`;
   const rows = KEY_VARS[cur].filter(n => r.summary[n]).map(n => ({ name: n, s: r.summary[n] }));
@@ -529,7 +535,13 @@ $('#guideBtn').onclick = () => {
   say('intro', { interrupt: true });
   setTimeout(enterAlign, 4500);
 };
-$('#capBtn').onclick = () => { unlockAudio(); startCountdown(); };
+$('#capBtn').onclick = () => {
+  unlockAudio();
+  // 「立即拍攝」略過對位檢查，所以腳不在畫面時先提醒
+  const n = S.hist.at(-1)?.n;
+  if (!n || [27, 28, 29, 30].every(i => n[i][3] < cfg.visThr)) toast(t('capWarn'));
+  startCountdown();
+};
 $('#nextBtn').onclick = () => command('next');
 $('#retakeBtn').onclick = () => command('retake');
 $('#stopBtn').onclick = () => command('stop');

@@ -202,15 +202,36 @@ export function computeVars(P, view, W = null) {
 // ---------------------------------------------------------------------------
 const median = a => { const b = a.filter(fin).sort((x, y) => x - y); return b.length ? b[b.length >> 1] : NaN; };
 
-/** 以身高求比例尺 (m/px)：眼睛到腳跟的鉛垂像素距離 = 0.936 × 身高 */
-export function scaleFromHeight(framesLm, rot, height_m, visThr) {
-  const d = framesLm.map(lm => {
-    const eye = [2, 5].map(i => rot(lm[i][0], lm[i][1])[1]), heel = [29, 30].filter(i => lm[i][3] >= visThr).map(i => rot(lm[i][0], lm[i][1])[1]);
-    if (!heel.length) return NaN;
-    return heel.reduce((a, b) => a + b) / heel.length - (eye[0] + eye[1]) / 2;
-  });
-  const px = median(d);
-  return px > 0 ? EYE_HEIGHT_RATIO * height_m / px : NaN;
+export const ANKLE_HEIGHT_RATIO = 0.039; // 外踝高 / 身高（Drillis & Contini, 1966）
+
+/**
+ * 以身高求比例尺 (m/px)，依序嘗試：
+ *   1. 眼睛→腳跟 的鉛垂像素距離 = 0.936 H
+ *   2. 眼睛→腳踝 = (0.936 − 0.039) H（腳跟看不到時）
+ *   3. world landmarks：軀幹（肩中點→髖中點）公尺長度 / 像素長度（腳都不在畫面時）
+ * 回傳 { scale, source }
+ */
+export function scaleFromHeight(frames, rot, height_m, visThr) {
+  const ok = (lm, ids) => ids.filter(i => lm[i][3] >= visThr);
+  const yOf = (lm, ids) => ids.reduce((s, i) => s + rot(lm[i][0], lm[i][1])[1], 0) / ids.length;
+  const eyeY = lm => yOf(lm, [2, 5]);
+  const per = (ids, ratio) => median(frames.map(({ lm }) => {
+    const v = ok(lm, ids); if (!v.length) return NaN;
+    const d = yOf(lm, v) - eyeY(lm);
+    return d > 0 ? ratio * height_m / d : NaN;
+  }));
+  let s = per([29, 30], EYE_HEIGHT_RATIO);
+  if (fin(s)) return { scale: s, source: 'eye-heel' };
+  s = per([27, 28], EYE_HEIGHT_RATIO - ANKLE_HEIGHT_RATIO);
+  if (fin(s)) return { scale: s, source: 'eye-ankle' };
+  s = median(frames.map(({ lm, wlm }) => {
+    if (!wlm || ok(lm, [11, 12, 23, 24]).length < 4) return NaN;
+    const m = (P, a, b) => P[a].map((x, k) => (x + P[b][k]) / 2);
+    const pxS = m(lm, 11, 12), pxH = m(lm, 23, 24), wS = m(wlm, 11, 12), wH = m(wlm, 23, 24);
+    const px = Math.hypot(pxS[0] - pxH[0], pxS[1] - pxH[1]), w = Math.hypot(wS[0] - wH[0], wS[1] - wH[1], wS[2] - wH[2]);
+    return px > 0 ? w / px : NaN;
+  }));
+  return { scale: s, source: fin(s) ? 'world-torso' : 'none' };
 }
 
 /**
@@ -225,7 +246,7 @@ export function processRecording(frames, { view, W, H, up, height_m, mass_kg, vi
   const tF = []; for (let k = 0; k * (1 / FPS) <= T + 1e-9; k++) tF.push(k / FPS);
 
   const tf0 = makeTransform({ W, H, up, view });
-  const scale = scaleFromHeight(frames.map(f => f.lm), tf0.rot, height_m, visThr);
+  const { scale, source: scaleSource } = scaleFromHeight(frames, tf0.rot, height_m, visThr);
 
   // 旋轉後像素；低可信度 → NaN
   const rotRaw = frames.map(f => f.lm.map(p => (p[3] >= visThr ? tf0.rot(p[0], p[1]) : [NaN, NaN])));
@@ -245,8 +266,10 @@ export function processRecording(frames, { view, W, H, up, height_m, mass_kg, vi
     for (let k = 0; k < tF.length; k++) wF[k][i] = [comp[0][k], comp[1][k], comp[2][k]];
   }
 
-  // 原點：第一幀（濾波後）右腳跟；若無則雙踝中點
-  const o = fin(filtRot[0][30][0]) ? filtRot[0][30] : [(filtRot[0][27][0] + filtRot[0][28][0]) / 2, (filtRot[0][27][1] + filtRot[0][28][1]) / 2];
+  // 原點：第一幀（濾波後）右腳跟 → 雙踝中點 → 髖中點（腳不在畫面時，y=0 位於髖高度）
+  const f0 = filtRot[0], midOf = (a, b) => [(f0[a][0] + f0[b][0]) / 2, (f0[a][1] + f0[b][1]) / 2];
+  const originCands = [['R_heel', f0[30]], ['mid_ankle', midOf(27, 28)], ['mid_hip', midOf(23, 24)], ['mid_shoulder', midOf(11, 12)]];
+  const [originSource, o] = originCands.find(([, p]) => fin(p[0]) && fin(p[1])) ?? ['none', [0, 0]];
   const sx = VIEW_SIGN[view];
   const toBody = ([rx, ry]) => [sx * (rx - o[0]) * scale, -(ry - o[1]) * scale];
 
@@ -294,7 +317,8 @@ export function processRecording(frames, { view, W, H, up, height_m, mass_kg, vi
     frames: n, duration_s: T, fps: T > 0 ? (n - 1) / T : NaN,
     validPct_keypoints: Math.round([11, 12, 23, 24, 25, 26, 27, 28, 29, 30].reduce((s, i) => s + validPct[i], 0) / 10),
     swappedFrames: frames.filter(f => f.swapped).length,
-    scale_m_per_px: scale, plumb_alpha_deg: tf0.alpha * D,
+    scale_m_per_px: scale, scale_source: scaleSource, origin_source: originSource, plumb_alpha_deg: tf0.alpha * D,
+    feetVisiblePct: Math.round((validPct[27] + validPct[28] + validPct[29] + validPct[30]) / 4),
   };
   return { view, tRaw, t: tF, raw, filt, summary, qc, rawFrames: frames };
 }

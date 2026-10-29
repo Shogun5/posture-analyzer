@@ -1,6 +1,6 @@
 // sw.js — Service worker：預先快取程式、Chart.js、MediaPipe WASM 與 heavy 模型 → 可離線使用
 // 更新程式時：把 CACHE 版本號 +1（並同步 js/app.js 的 APP_VERSION），使用者下次開啟即取得新版。
-const CACHE = 'posture-v1.0.3';
+const CACHE = 'posture-v1.0.4';
 const MP = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
 
 const LOCAL = [
