@@ -3,7 +3,7 @@ export const STR = {
   zh: {
     appTitle: '人體姿勢分析器',
     tabCapture: '拍攝', tabResults: '結果', tabHistory: '歷史', tabSettings: '設定',
-    btnCamera: '開啟相機', btnStartSession: '開始引導拍攝', btnCaptureNow: '立即拍攝',
+    btnCamera: '開啟相機', btnFlip: '🔄 切換前/後鏡頭', btnStartSession: '開始引導拍攝', btnCaptureNow: '立即拍攝',
     btnNext: '下一個方向', btnRetake: '重拍', btnStop: '停止',
     btnPlumbSensor: '感測器鉛垂', btnPlumbManual: '手動鉛垂(點2點)', btnPlumbReset: '取消鉛垂',
     btnVoiceOn: '語音指令：開', btnVoiceOff: '語音指令：關',
@@ -40,7 +40,7 @@ export const STR = {
   en: {
     appTitle: 'Posture Analyzer',
     tabCapture: 'Capture', tabResults: 'Results', tabHistory: 'History', tabSettings: 'Settings',
-    btnCamera: 'Start camera', btnStartSession: 'Start guided session', btnCaptureNow: 'Capture now',
+    btnCamera: 'Start camera', btnFlip: '🔄 Switch front/rear', btnStartSession: 'Start guided session', btnCaptureNow: 'Capture now',
     btnNext: 'Next view', btnRetake: 'Retake', btnStop: 'Stop',
     btnPlumbSensor: 'Sensor plumb', btnPlumbManual: 'Manual plumb (tap 2)', btnPlumbReset: 'Clear plumb',
     btnVoiceOn: 'Voice cmd: ON', btnVoiceOff: 'Voice cmd: OFF',

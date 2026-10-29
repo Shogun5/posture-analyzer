@@ -11,7 +11,7 @@ import { timeSeries, trend, chartPNG, summaryTable } from './charts.js';
 import { downloadCSV, downloadVideos, download, dataURLtoBlob, reportHTML, KEY_VARS } from './export.js';
 import { sgDerivative } from './filters.js';
 
-export const APP_VERSION = '1.0.0'; // 與 sw.js 的 CACHE 版本一起更新
+export const APP_VERSION = '1.0.1'; // 與 sw.js 的 CACHE 版本一起更新
 
 const $ = s => document.querySelector(s);
 const fin = Number.isFinite;
@@ -56,10 +56,13 @@ async function startCamera() {
   try {
     S.stream?.getTracks().forEach(tr => tr.stop());
     const h = +cfg.res;
-    S.stream = await navigator.mediaDevices.getUserMedia({
+    const constraints = mode => ({
       audio: false,
-      video: { facingMode: { ideal: cfg.facing }, height: { ideal: h }, width: { ideal: Math.round(h * 16 / 9) }, frameRate: { ideal: 30, max: 30 } },
+      video: { facingMode: { [mode]: cfg.facing }, height: { ideal: h }, width: { ideal: Math.round(h * 16 / 9) }, frameRate: { ideal: 30, max: 30 } },
     });
+    // 先要求指定鏡頭（exact）；只有一顆鏡頭的裝置（筆電）退回 ideal
+    try { S.stream = await navigator.mediaDevices.getUserMedia(constraints('exact')); }
+    catch (e) { if (e.name !== 'OverconstrainedError' && e.name !== 'NotFoundError') throw e; S.stream = await navigator.mediaDevices.getUserMedia(constraints('ideal')); }
     video.srcObject = S.stream;
     video.setAttribute('playsinline', ''); video.muted = true;    // iOS 必要
     await video.play();
@@ -454,6 +457,16 @@ function applyLang() {
 }
 $('#langBtn').onclick = () => { cfg.lang = cfg.lang === 'zh' ? 'en' : 'zh'; saveCfg(); applyLang(); fillSettings(); };
 $('#camBtn').onclick = startCamera;
+// 前/後鏡頭切換：存入設定；相機已開則立即重啟。鉛垂校正與鏡頭方向有關，切換後需重新校正
+$('#flipBtn').onclick = () => {
+  if (S.phase === 'record' || S.phase === 'countdown') return;
+  cfg.facing = cfg.facing === 'user' ? 'environment' : 'user';
+  saveCfg(); fillSettings();
+  if (S.plumbMode !== 'none') { S.up = [0, -1]; S.plumbMode = 'none'; }
+  S.liveScale = NaN; Object.values(S.trails).forEach(a => (a.length = 0));
+  toast(`${t('camera')}: ${t(cfg.facing === 'user' ? 'camFront' : 'camBack')}`);
+  if (S.stream) startCamera();
+};
 $('#guideBtn').onclick = () => {
   unlockAudio();
   S.session = newSession(); S.guided = true; S.viewIdx = 0;
