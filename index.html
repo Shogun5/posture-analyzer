@@ -113,6 +113,8 @@
       <label><span data-i18n="model">模型</span><select name="model"><option value="heavy">heavy（最準）</option><option value="full">full</option><option value="lite">lite（最快）</option></select></label>
       <label><span data-i18n="camera">鏡頭</span><select name="facing"><option value="environment" data-i18n="camBack">後鏡頭</option><option value="user" data-i18n="camFront">前鏡頭</option></select></label>
       <label><span data-i18n="resolution">解析度</span><select name="res"><option value="480">480p</option><option value="720">720p</option><option value="1080">1080p</option></select></label>
+      <label><span data-i18n="delegate">運算方式</span><select name="delegate"><option value="GPU">GPU（快）</option><option value="CPU">CPU（穩定）</option></select></label>
+      <label><span data-i18n="videoFmt">錄影格式</span><select name="videoFmt"><option value="auto" data-i18n="fmtAuto">自動</option><option value="webm">WebM (VP8)</option><option value="mp4">MP4 (H.264)</option><option value="none" data-i18n="fmtNone">不錄影</option></select></label>
       <label><span data-i18n="captureSec">記錄秒數</span><input name="captureSec" type="number" min="1" max="30"></label>
       <label><span data-i18n="countdownSec">倒數秒數</span><input name="countdownSec" type="number" min="1" max="10"></label>
       <label><span data-i18n="visThr">可信度閾值</span><input name="visThr" type="number" step="0.05" min="0" max="1"></label>
@@ -125,6 +127,7 @@
       <p class="hint" data-i18n="needHttps"></p>
       <p class="hint" data-i18n="iosHint"></p>
       <p class="hint" id="verInfo"></p>
+      <p class="hint" id="crashInfo"></p>
     </form>
   </section>
 

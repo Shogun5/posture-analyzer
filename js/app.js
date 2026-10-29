@@ -11,7 +11,7 @@ import { timeSeries, trend, chartPNG, summaryTable } from './charts.js';
 import { downloadCSV, downloadVideos, download, dataURLtoBlob, reportHTML, KEY_VARS } from './export.js';
 import { sgDerivative } from './filters.js';
 
-export const APP_VERSION = '1.0.1'; // 與 sw.js 的 CACHE 版本一起更新
+export const APP_VERSION = '1.0.2'; // 與 sw.js 的 CACHE 版本一起更新
 
 const $ = s => document.querySelector(s);
 const fin = Number.isFinite;
@@ -20,6 +20,7 @@ const fin = Number.isFinite;
 const DEF = {
   lang: 'zh', subject: 'S01', height_cm: 170, mass_kg: 65, model: 'heavy', facing: 'environment', res: '720',
   captureSec: 5, countdownSec: 5, visThr: 0.5, mirrorFix: false, autoCapture: true, gesture: true, rawLm: false, thr: DEFAULT_THR,
+  delegate: 'GPU', videoFmt: 'auto',
 };
 let cfg = loadCfg();
 function loadCfg() {
@@ -27,6 +28,33 @@ function loadCfg() {
   catch { return { ...DEF }; }
 }
 const saveCfg = () => { try { localStorage.setItem('pa.cfg', JSON.stringify(cfg)); } catch { /* private mode */ } };
+
+// ---------------- 當機追蹤（breadcrumb） ----------------
+// 每個高風險步驟前記下目前階段；正常關閉頁面時記為 closed。
+// 下次開啟若上次停在某階段（瀏覽器分頁當機不會觸發 pagehide），就顯示階段並自動改用較安全的設定。
+const CRASH_STAGES = ['camera', 'model', 'live', 'countdown', 'record', 'process', 'results', 'save'];
+function crumb(stage, extra = {}) {
+  try { localStorage.setItem('pa.crumb', JSON.stringify({ stage, t: Date.now(), delegate: cfg.delegate, videoFmt: cfg.videoFmt, model: cfg.model, ...extra })); } catch { /* ignore */ }
+}
+addEventListener('pagehide', () => crumb('closed'));
+function recoverFromCrash() {
+  let c = null;
+  try { c = JSON.parse(localStorage.getItem('pa.crumb') || 'null'); } catch { /* ignore */ }
+  if (!c || !CRASH_STAGES.includes(c.stage)) return null;
+  const fixes = [];
+  if (c.stage === 'record') {
+    // 錄影編碼器當機：MP4(H.264) → WebM → 不錄影
+    if (cfg.videoFmt === 'auto' || cfg.videoFmt === 'mp4') { cfg.videoFmt = 'webm'; fixes.push('video → WebM'); }
+    else if (cfg.videoFmt === 'webm') { cfg.videoFmt = 'none'; fixes.push('video → off'); }
+  } else if (['model', 'live', 'countdown'].includes(c.stage) && cfg.delegate === 'GPU') {
+    cfg.delegate = 'CPU'; fixes.push('GPU → CPU');               // WebGL/GPU 推論當機
+  }
+  saveCfg();
+  const info = { ...c, fixes, at: new Date(c.t).toLocaleString() };
+  try { localStorage.setItem('pa.lastCrash', JSON.stringify(info)); } catch { /* ignore */ }
+  crumb('idle');
+  return info;
+}
 
 // ---------------- 狀態 ----------------
 const S = {
@@ -55,6 +83,7 @@ async function startCamera() {
   if (!window.isSecureContext) { toast(t('needHttps')); return; }
   try {
     S.stream?.getTracks().forEach(tr => tr.stop());
+    crumb('camera');
     const h = +cfg.res;
     const constraints = mode => ({
       audio: false,
@@ -68,15 +97,18 @@ async function startCamera() {
     await video.play();
     await ensureModel();
     $('#guideBtn').disabled = false; $('#capBtn').disabled = false;
+    crumb('live');
     if (!S.looping) { S.looping = true; requestAnimationFrame(loop); }
-  } catch (e) { toast(t('camErr') + e.message); console.error(e); }
+  } catch (e) { crumb('idle'); toast(t('camErr') + e.message); console.error(e); }
 }
 async function ensureModel() {
-  if (S.pose && S.poseVariant === cfg.model) return;
+  const key = `${cfg.model}/${cfg.delegate}`;
+  if (S.pose && S.poseVariant === key) return;
+  crumb('model');
   $('#msg').textContent = t('loadingModel');
   S.pose?.close?.();
-  S.pose = await createPose(cfg.model);
-  S.poseVariant = cfg.model;
+  S.pose = await createPose(cfg.model, cfg.delegate);
+  S.poseVariant = key;
   $('#msg').textContent = '';
   toast(t('modelReady'));
 }
@@ -99,7 +131,8 @@ function loop(now) {
   if (!S.pose) return;
 
   let det = null;
-  try { det = detect(S.pose, canvas, now); } catch (e) { console.warn(e); }
+  // 不需鏡像修正時直接把 video 交給模型（MediaPipe 的標準用法）；需要時才用翻轉後的畫布
+  try { det = detect(S.pose, cfg.mirrorFix ? canvas : video, now, W, H); } catch (e) { console.warn(e); }
   const view = curView();
   const detView = det ? detectView(det.norm) : null;
   let lm = det?.lm ?? null, swapped = false;
@@ -219,6 +252,7 @@ function startCountdown(sec = cfg.countdownSec) {
   if (!S.pose || S.phase === 'record') return;
   S.session ??= newSession();
   S.countdownEnd = performance.now() + sec * 1000; S.lastCount = -1;
+  crumb('countdown');
   setPhase('countdown');
 }
 
@@ -226,8 +260,9 @@ function startRecording(now) {
   beep(1046, 300);
   say('recording', { interrupt: true });
   S.recFrames = []; S.recStart = now; S.snapTaken = false; S.snapshot = null;
-  S.recorder = new CanvasRecorder(canvas, 30);
-  S.recorder.start();
+  S.recorder = new CanvasRecorder(canvas, 30, cfg.videoFmt);
+  crumb('record', { mime: S.recorder.mime });
+  try { S.recorder.start(); } catch (e) { console.warn('recorder', e); S.recorder = null; } // 錄影失敗仍繼續記錄關鍵點
   setPhase('record');
   $('#msg').textContent = '';
 }
@@ -235,13 +270,19 @@ function startRecording(now) {
 async function finishRecording() {
   setPhase('done');
   const view = curView();
-  const clip = await S.recorder?.stop();
+  let clip = null;
+  try { clip = await S.recorder?.stop(); } catch (e) { console.warn(e); }
+  crumb('process');
   const frames = S.recFrames;
-  if (frames.length < 5) { toast('Too few frames'); enterAlign(); return; }
+  if (frames.length < 5) { toast('Too few frames'); crumb('live'); enterAlign(); return; }
   const baseline = S.baseline?.views?.[view] ?? null;
-  const result = processRecording(frames, {
-    view, W: canvas.width, H: canvas.height, up: S.up, height_m: cfg.height_cm / 100, mass_kg: cfg.mass_kg, visThr: cfg.visThr, baseline,
-  });
+  let result;
+  try {
+    result = processRecording(frames, {
+      view, W: canvas.width, H: canvas.height, up: S.up, height_m: cfg.height_cm / 100, mass_kg: cfg.mass_kg, visThr: cfg.visThr, baseline,
+    });
+  } catch (e) { console.error(e); toast(`Analysis error: ${e.message}`); crumb('live'); setPhase('idle'); return; }
+  crumb('results');
   const flags = assessPosture(result.summary, view, cfg.thr);
   S.session.views[view] = { result, flags, snapshot: S.snapshot, video: clip };
   S.session.plumbMode = S.plumbMode; S.session.up = S.up;
@@ -250,6 +291,7 @@ async function finishRecording() {
   const nFlags = flags.filter(f => f.sev !== 'info').length;
   toast(`${t('view_' + view)} ✓  ${t('flags')}: ${nFlags}`);
   renderResults(view);
+  crumb('live');
 
   if (S.guided) {
     const next = VIEWS.findIndex((vw, i) => i > S.viewIdx && !S.session.views[vw]);
@@ -263,7 +305,7 @@ function command(cmd) {
   if (cmd === 'capture') { if (S.phase === 'align' || S.phase === 'idle') startCountdown(); }
   else if (cmd === 'next') { S.viewIdx = (S.viewIdx + 1) % 4; if (S.guided) enterAlign(); else renderChips(); }
   else if (cmd === 'retake') { if (S.phase !== 'record') { S.guided = true; enterAlign(); } }
-  else if (cmd === 'stop') { S.guided = false; S.recorder?.stop(); setPhase('idle'); speechSynthesis.cancel(); $('#msg').textContent = ''; }
+  else if (cmd === 'stop') { S.guided = false; S.recorder?.stop(); setPhase('idle'); if (S.stream) crumb('live'); speechSynthesis.cancel(); $('#msg').textContent = ''; }
   else if (cmd === 'repeat') say(`view_${curView()}`, { interrupt: true });
 }
 
@@ -436,7 +478,7 @@ $('#settingsForm').addEventListener('submit', async e => {
   if (old.subject !== cfg.subject) S.baseline = (await store.getBaseline(cfg.subject)) ?? null;
   if (S.session && !Object.keys(S.session.views).length) S.session = null;
   if (S.stream && (old.facing !== cfg.facing || old.res !== cfg.res)) startCamera();
-  else if (S.stream && old.model !== cfg.model) ensureModel();
+  else if (S.stream && (old.model !== cfg.model || old.delegate !== cfg.delegate)) ensureModel();
   toast(t('saved'));
 });
 $('#resetThrBtn').onclick = () => { $('#settingsForm').elements.thr.value = JSON.stringify(DEFAULT_THR, null, 2); };
@@ -492,7 +534,13 @@ $('#voiceBtn').onclick = () => {
 
 // ---------------- 啟動 ----------------
 (async function init() {
+  const crash = recoverFromCrash();   // 必須在 fillSettings 前，讓自動修正的設定顯示出來
   applyLang(); fillSettings();
+  if (crash) {
+    const msg = `${t('crashPrev')}「${t('stage_' + crash.stage)}」${crash.fixes.length ? ' → ' + t('crashFixed') + crash.fixes.join(', ') : ''}`;
+    $('#msg').textContent = msg; setTimeout(() => { if ($('#msg').textContent === msg) $('#msg').textContent = ''; }, 12000);
+  }
+  try { const lc = JSON.parse(localStorage.getItem('pa.lastCrash') || 'null'); if (lc) $('#crashInfo').textContent = `${t('crashPrev')} ${lc.at}「${t('stage_' + lc.stage)}」${lc.mime ? ' (' + lc.mime + ')' : ''} ${lc.fixes.join(', ')}`; } catch { /* ignore */ }
   $('#verInfo').textContent = `v${APP_VERSION} · MediaPipe tasks-vision ${MP_VERSION} · Chart.js ${window.Chart?.version ?? '?'}`;
   S.baseline = (await store.getBaseline(cfg.subject).catch(() => null)) ?? null;
   store.requestPersist();

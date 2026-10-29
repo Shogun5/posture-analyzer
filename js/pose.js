@@ -11,8 +11,8 @@ export const MODEL_URLS = {
 
 let fileset = null;
 
-/** 建立 PoseLandmarker（VIDEO 模式、單人）。先試 GPU，失敗退回 CPU。 */
-export async function createPose(variant = 'heavy') {
+/** 建立 PoseLandmarker（VIDEO 模式、單人）。delegate='GPU' 時先試 GPU，失敗退回 CPU。 */
+export async function createPose(variant = 'heavy', delegate = 'GPU') {
   fileset ??= await FilesetResolver.forVisionTasks(WASM_URL);
   const opts = delegate => ({
     baseOptions: { modelAssetPath: MODEL_URLS[variant], delegate },
@@ -23,6 +23,7 @@ export async function createPose(variant = 'heavy') {
     minTrackingConfidence: 0.5,
     outputSegmentationMasks: false,
   });
+  if (delegate === 'CPU') return PoseLandmarker.createFromOptions(fileset, opts('CPU'));
   try { return await PoseLandmarker.createFromOptions(fileset, opts('GPU')); }
   catch (e) { console.warn('GPU delegate failed, using CPU', e); return PoseLandmarker.createFromOptions(fileset, opts('CPU')); }
 }
@@ -31,10 +32,9 @@ export async function createPose(variant = 'heavy') {
  * 對一張畫布偵測；回傳像素座標關鍵點 lm[i] = [x_px, y_px, z, visibility]
  * 與 world landmarks wlm[i] = [x_m, y_m, z_m, visibility]（以髖中點為原點）
  */
-export function detect(landmarker, canvas, tsMs) {
-  const r = landmarker.detectForVideo(canvas, tsMs);
+export function detect(landmarker, source, tsMs, W = source.width, H = source.height) {
+  const r = landmarker.detectForVideo(source, tsMs);
   if (!r.landmarks?.length) return null;
-  const W = canvas.width, H = canvas.height;
   const lm = r.landmarks[0].map(p => [p.x * W, p.y * H, p.z, p.visibility ?? 0]);
   const wlm = r.worldLandmarks?.[0]?.map(p => [p.x, p.y, p.z, p.visibility ?? 0]) ?? null;
   return { lm, wlm, norm: r.landmarks[0].map(p => [p.x, p.y, p.z, p.visibility ?? 0]) };
