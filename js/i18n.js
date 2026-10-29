@@ -1,0 +1,143 @@
+// i18n.js — 中英雙語字串與語音提示 / bilingual UI strings and voice prompts
+export const STR = {
+  zh: {
+    appTitle: '人體姿勢分析器',
+    tabCapture: '拍攝', tabResults: '結果', tabHistory: '歷史', tabSettings: '設定',
+    btnCamera: '開啟相機', btnStartSession: '開始引導拍攝', btnCaptureNow: '立即拍攝',
+    btnNext: '下一個方向', btnRetake: '重拍', btnStop: '停止',
+    btnPlumbSensor: '感測器鉛垂', btnPlumbManual: '手動鉛垂(點2點)', btnPlumbReset: '取消鉛垂',
+    btnVoiceOn: '語音指令：開', btnVoiceOff: '語音指令：關',
+    btnSave: '儲存本次', btnSetBaseline: '設為 0° 基準', btnClearBaseline: '清除基準',
+    btnCSV: '下載 CSV', btnVideo: '下載影片', btnPNG: '下載圖表 PNG', btnReport: 'HTML/PDF 報告',
+    btnSnapshot: '下載快照', btnDelete: '刪除', btnLoad: '載入', btnCompare: '設為比較(前測)',
+    loadingModel: '載入 MediaPipe 模型中…', modelReady: '模型就緒', cameraOff: '相機未開啟',
+    phase_idle: '待命', phase_align: '對位中', phase_countdown: '倒數', phase_record: '記錄中', phase_done: '完成',
+    view_front: '正面', view_right: '右側', view_back: '背面', view_left: '左側',
+    detected: '偵測方向', subject: '受測者 ID', height: '身高 (cm)', mass: '體重 (kg)',
+    model: '模型', camera: '鏡頭', camFront: '前鏡頭', camBack: '後鏡頭', resolution: '解析度',
+    mirrorFix: '前鏡頭鏡像修正（若畫面左右相反請勾選）', captureSec: '記錄秒數', countdownSec: '倒數秒數',
+    autoCapture: '對位完成自動倒數', gesture: '舉手手勢觸發拍照', voiceCmd: '語音指令（需網路，僅傳送語音）',
+    visThr: '可信度閾值', thresholds: '問題姿勢判定閾值 (JSON)', rawLm: 'CSV 含原始 33 點座標',
+    lang: '語言 Language', saveSettings: '儲存設定', resetThr: '還原預設閾值',
+    plumbStatus: '鉛垂校正', none: '無', sensor: '感測器', manual: '手動',
+    scale: '比例尺', baseline: '0° 基準', set: '已設定', notSet: '未設定',
+    tapPlumb1: '請點選鉛垂線上方一點', tapPlumb2: '請點選鉛垂線下方一點',
+    session: '紀錄', view: '方向', variables: '變數', compareMode: '比較模式',
+    cmpNone: '無', cmpLR: '左右疊圖', cmpSession: '前後測疊圖', trend: '多日趨勢',
+    summary: '摘要表', max: '最大', min: '最小', mean: '平均', rom: 'ROM', tmax: '最大值時間(s)', tmin: '最小值時間(s)',
+    flags: '姿勢問題判讀', noFlags: '未偵測到超過閾值的問題姿勢', severity: '程度', mild: '輕度', marked: '明顯',
+    value: '數值', threshold: '閾值', slides: '講義頁', note: '說明',
+    noSession: '尚無資料，請先完成拍攝', saved: '已儲存', deleted: '已刪除',
+    confirmDelete: '確定刪除這筆紀錄？', history: '歷史紀錄', date: '日期',
+    qc: '品質', validPct: '有效幀%', fps: '實際 fps', swapped: '左右修正幀',
+    reportTitle: '姿勢分析報告', method: '方法', limits: '限制',
+    iosHint: 'iPhone/iPad 請用 Safari 開啟，並「加入主畫面」。',
+    needHttps: '相機需要 HTTPS 或 localhost，請勿用 file:// 開啟。',
+    camErr: '無法開啟相機：', speechUnsupported: '此瀏覽器不支援語音辨識，請改用舉手手勢或按鈕。',
+    level: '手機傾斜', liveVoiceHeard: '聽到：',
+    deltaNote: 'Δ = 相對 0° 基準',
+  },
+  en: {
+    appTitle: 'Posture Analyzer',
+    tabCapture: 'Capture', tabResults: 'Results', tabHistory: 'History', tabSettings: 'Settings',
+    btnCamera: 'Start camera', btnStartSession: 'Start guided session', btnCaptureNow: 'Capture now',
+    btnNext: 'Next view', btnRetake: 'Retake', btnStop: 'Stop',
+    btnPlumbSensor: 'Sensor plumb', btnPlumbManual: 'Manual plumb (tap 2)', btnPlumbReset: 'Clear plumb',
+    btnVoiceOn: 'Voice cmd: ON', btnVoiceOff: 'Voice cmd: OFF',
+    btnSave: 'Save session', btnSetBaseline: 'Set as 0° baseline', btnClearBaseline: 'Clear baseline',
+    btnCSV: 'Download CSV', btnVideo: 'Download video', btnPNG: 'Chart PNG', btnReport: 'HTML/PDF report',
+    btnSnapshot: 'Download snapshot', btnDelete: 'Delete', btnLoad: 'Load', btnCompare: 'Use as pre-test',
+    loadingModel: 'Loading MediaPipe model…', modelReady: 'Model ready', cameraOff: 'Camera off',
+    phase_idle: 'Idle', phase_align: 'Aligning', phase_countdown: 'Countdown', phase_record: 'Recording', phase_done: 'Done',
+    view_front: 'Front', view_right: 'Right side', view_back: 'Back', view_left: 'Left side',
+    detected: 'Detected view', subject: 'Subject ID', height: 'Height (cm)', mass: 'Mass (kg)',
+    model: 'Model', camera: 'Camera', camFront: 'Front', camBack: 'Rear', resolution: 'Resolution',
+    mirrorFix: 'Front-camera mirror fix (tick if left/right appear swapped)', captureSec: 'Record (s)', countdownSec: 'Countdown (s)',
+    autoCapture: 'Auto countdown when aligned', gesture: 'Raise-hand gesture trigger', voiceCmd: 'Voice commands (network; audio only)',
+    visThr: 'Visibility threshold', thresholds: 'Faulty-posture thresholds (JSON)', rawLm: 'CSV includes raw 33 landmarks',
+    lang: 'Language 語言', saveSettings: 'Save settings', resetThr: 'Reset thresholds',
+    plumbStatus: 'Plumb calibration', none: 'none', sensor: 'sensor', manual: 'manual',
+    scale: 'Scale', baseline: '0° baseline', set: 'set', notSet: 'not set',
+    tapPlumb1: 'Tap an upper point on the plumb line', tapPlumb2: 'Tap a lower point on the plumb line',
+    session: 'Session', view: 'View', variables: 'Variables', compareMode: 'Compare',
+    cmpNone: 'None', cmpLR: 'Left vs right', cmpSession: 'Pre vs post', trend: 'Multi-day trend',
+    summary: 'Summary', max: 'Max', min: 'Min', mean: 'Mean', rom: 'ROM', tmax: 't@max (s)', tmin: 't@min (s)',
+    flags: 'Posture findings', noFlags: 'No faulty posture above threshold', severity: 'Severity', mild: 'mild', marked: 'marked',
+    value: 'Value', threshold: 'Threshold', slides: 'Slides', note: 'Note',
+    noSession: 'No data yet — capture first', saved: 'Saved', deleted: 'Deleted',
+    confirmDelete: 'Delete this session?', history: 'History', date: 'Date',
+    qc: 'QC', validPct: 'valid %', fps: 'actual fps', swapped: 'L/R fixed frames',
+    reportTitle: 'Posture Analysis Report', method: 'Method', limits: 'Limitations',
+    iosHint: 'On iPhone/iPad open in Safari and “Add to Home Screen”.',
+    needHttps: 'Camera needs HTTPS or localhost — do not open via file://.',
+    camErr: 'Cannot open camera: ', speechUnsupported: 'Speech recognition not supported; use the raise-hand gesture or buttons.',
+    level: 'Phone tilt', liveVoiceHeard: 'Heard: ',
+    deltaNote: 'Δ = relative to 0° baseline',
+  },
+};
+
+// 語音引導腳本 / voice guidance scripts
+export const VOICE = {
+  zh: {
+    intro: '歡迎使用姿勢分析。請站在距離鏡頭約三公尺處，讓頭到腳完整入鏡。',
+    view_front: '正面。請面向鏡頭站好，雙腳與髖同寬，腳尖朝前，雙手自然垂放在身體兩側，眼睛平視前方。',
+    view_right: '右側面。請向左轉九十度，讓右側身體面對鏡頭，雙手自然下垂，眼睛平視前方。',
+    view_back: '背面。請再向左轉九十度，背對鏡頭站好，雙腳與髖同寬，雙手自然下垂。',
+    view_left: '左側面。請再向左轉九十度，讓左側身體面對鏡頭，眼睛平視前方。',
+    noPerson: '看不到受測者，請站到鏡頭前方。',
+    backUp: '請往後退一步，讓頭和腳都入鏡。',
+    comeCloser: '請往前一步。',
+    center: '請移到畫面中央。',
+    turn_front: '請轉身，面向鏡頭。', turn_back: '請轉身，背對鏡頭。',
+    turn_right: '請轉身，讓右側面對鏡頭。', turn_left: '請轉身，讓左側面對鏡頭。',
+    arms: '雙手請自然放在身體兩側。',
+    still: '請站穩，保持不動。',
+    readyAuto: '姿勢就緒，即將開始倒數。',
+    readyManual: '姿勢就緒。請說「拍照」，或舉起一隻手超過頭頂，開始倒數。',
+    lowerArm: '請放下手臂，保持不動。',
+    recording: '開始記錄，請保持不動。',
+    viewDone: '完成。',
+    allDone: '四個方向都拍攝完成，謝謝，可以休息了。',
+    nums: ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十'],
+  },
+  en: {
+    intro: 'Welcome. Please stand about three meters from the camera so your whole body is visible.',
+    view_front: 'Front view. Face the camera, feet hip-width apart, toes forward, arms relaxed at your sides, eyes level.',
+    view_right: 'Right side. Turn ninety degrees to your left so your right side faces the camera. Arms relaxed, eyes level.',
+    view_back: 'Back view. Turn ninety degrees to your left again, with your back to the camera. Arms relaxed.',
+    view_left: 'Left side. Turn ninety degrees to your left again so your left side faces the camera.',
+    noPerson: 'I cannot see you. Please step in front of the camera.',
+    backUp: 'Please step back so your head and feet are visible.',
+    comeCloser: 'Please step closer.',
+    center: 'Please move to the center of the frame.',
+    turn_front: 'Please turn to face the camera.', turn_back: 'Please turn your back to the camera.',
+    turn_right: 'Please turn so your right side faces the camera.', turn_left: 'Please turn so your left side faces the camera.',
+    arms: 'Please relax your arms at your sides.',
+    still: 'Please stand still.',
+    readyAuto: 'Position OK. Countdown starting.',
+    readyManual: 'Position OK. Say “capture” or raise one hand above your head to start.',
+    lowerArm: 'Lower your arm and hold still.',
+    recording: 'Recording. Hold still.',
+    viewDone: 'Done.',
+    allDone: 'All four views captured. Thank you, you may relax.',
+    nums: ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'],
+  },
+};
+
+// 語音指令關鍵字 / voice-command keywords
+export const COMMANDS = {
+  zh: { capture: ['拍照', '開始', '照相', '拍', '茄子'], next: ['下一個', '下一步', '跳過'], retake: ['重拍', '再一次', '重來'], stop: ['停止', '結束', '暫停'], repeat: ['再說一次', '重複'] },
+  en: { capture: ['capture', 'start', 'photo', 'cheese', 'shoot'], next: ['next', 'skip'], retake: ['retake', 'again', 'redo'], stop: ['stop', 'end', 'pause'], repeat: ['repeat', 'say again'] },
+};
+
+let lang = 'zh';
+export const getLang = () => lang;
+export function t(key) { return (STR[lang] && STR[lang][key]) ?? STR.zh[key] ?? key; }
+export function v(key) { return VOICE[lang][key] ?? key; }
+
+// 套用語言到所有 data-i18n 元素
+export function setLang(l) {
+  lang = STR[l] ? l : 'zh';
+  document.documentElement.lang = lang === 'zh' ? 'zh-Hant' : 'en';
+  document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+}

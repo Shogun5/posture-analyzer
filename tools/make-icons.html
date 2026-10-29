@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Icon Maker</title>
+<style>body{font:15px system-ui;margin:16px;background:#f8fafc;color:#0f172a}canvas{border:1px solid #ccc;margin:8px;max-width:45vw}button{padding:8px 14px;margin:4px}</style>
+</head>
+<body>
+<h1>PWA 圖示產生器</h1>
+<p>用瀏覽器開啟此頁（http/https 皆可），按下載後把兩個 PNG 放到 <code>icons/</code>。</p>
+<canvas id="c192" width="192" height="192"></canvas><canvas id="c512" width="512" height="512"></canvas><br>
+<button onclick="dl('c192','icon-192.png')">下載 icon-192.png</button>
+<button onclick="dl('c512','icon-512.png')">下載 icon-512.png</button>
+<script>
+// 圖示：青綠底 + 鉛垂線 + 簡化人形骨架（maskable：主體位於中央 80% 安全區）
+function draw(cv) {
+  const s = cv.width, g = cv.getContext('2d'), u = s / 100;
+  g.fillStyle = '#0f766e'; g.fillRect(0, 0, s, s);
+  g.strokeStyle = '#facc15'; g.lineWidth = 2 * u; g.setLineDash([5 * u, 3 * u]);
+  g.beginPath(); g.moveTo(50 * u, 12 * u); g.lineTo(50 * u, 88 * u); g.stroke(); g.setLineDash([]);
+  g.strokeStyle = '#fff'; g.lineWidth = 5 * u; g.lineCap = g.lineJoin = 'round';
+  const L = pts => { g.beginPath(); pts.forEach(([x, y], i) => (i ? g.lineTo(x * u, y * u) : g.moveTo(x * u, y * u))); g.stroke(); };
+  g.fillStyle = '#fff'; g.beginPath(); g.arc(50 * u, 24 * u, 7 * u, 0, 7); g.fill();
+  L([[50, 32], [50, 56]]); L([[36, 36], [64, 36]]); L([[36, 36], [33, 54]]); L([[64, 36], [67, 54]]);
+  L([[42, 56], [58, 56]]); L([[42, 56], [41, 84]]); L([[58, 56], [59, 84]]);
+  g.fillStyle = '#f97316'; [[50, 56], [41, 70], [59, 70]].forEach(([x, y]) => { g.beginPath(); g.arc(x * u, y * u, 3 * u, 0, 7); g.fill(); });
+}
+draw(document.getElementById('c192')); draw(document.getElementById('c512'));
+function dl(id, name) { const a = document.createElement('a'); a.href = document.getElementById(id).toDataURL('image/png'); a.download = name; a.click(); }
+</script>
+</body>
+</html>

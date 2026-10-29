@@ -1,0 +1,16 @@
+{
+  "name": "人體姿勢分析器 Posture Analyzer",
+  "short_name": "姿勢分析",
+  "description": "MediaPipe 本機姿勢分析：四方向語音引導拍攝、問題姿勢判讀、多日追蹤",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0b1120",
+  "theme_color": "#0f766e",
+  "lang": "zh-Hant",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>人體姿勢分析器 Posture Analyzer</title>
+  <meta name="description" content="MediaPipe 本機姿勢分析 PWA：四方向引導拍攝、問題姿勢判讀、多日追蹤">
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0f766e">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="姿勢分析">
+  <link rel="stylesheet" href="css/style.css">
+  <!-- Chart.js（固定版本，UMD → window.Chart） -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <!-- 主程式（ES module；內部 import @mediapipe/tasks-vision@0.10.14） -->
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <header>
+    <h1 data-i18n="appTitle">人體姿勢分析器</h1>
+    <button id="langBtn" class="ghost">EN</button>
+  </header>
+
+  <nav class="tabs">
+    <button data-tab="capture" class="on" data-i18n="tabCapture">拍攝</button>
+    <button data-tab="results" data-i18n="tabResults">結果</button>
+    <button data-tab="history" data-i18n="tabHistory">歷史</button>
+    <button data-tab="settings" data-i18n="tabSettings">設定</button>
+  </nav>
+
+  <!-- 拍攝 -->
+  <section id="tab-capture" class="tab on">
+    <div class="chips" id="viewChips"></div>
+    <div class="stage">
+      <!-- iOS Safari 必須 playsinline + muted 才能內嵌播放相機 -->
+      <video id="video" playsinline muted autoplay></video>
+      <canvas id="stage"></canvas>
+      <div id="msg" class="msg"></div>
+    </div>
+    <div id="status" class="status"></div>
+    <div class="btns">
+      <button id="camBtn" class="primary" data-i18n="btnCamera">開啟相機</button>
+      <button id="guideBtn" class="primary" data-i18n="btnStartSession" disabled>開始引導拍攝</button>
+      <button id="capBtn" data-i18n="btnCaptureNow" disabled>立即拍攝</button>
+      <button id="nextBtn" data-i18n="btnNext">下一個方向</button>
+      <button id="retakeBtn" data-i18n="btnRetake">重拍</button>
+      <button id="stopBtn" data-i18n="btnStop">停止</button>
+    </div>
+    <div class="btns small">
+      <button id="plumbSensorBtn" data-i18n="btnPlumbSensor">感測器鉛垂</button>
+      <button id="plumbManualBtn" data-i18n="btnPlumbManual">手動鉛垂</button>
+      <button id="plumbResetBtn" data-i18n="btnPlumbReset">取消鉛垂</button>
+      <button id="voiceBtn" data-i18n="btnVoiceOff">語音指令：關</button>
+    </div>
+    <p id="heard" class="hint"></p>
+  </section>
+
+  <!-- 結果 -->
+  <section id="tab-results" class="tab">
+    <div class="row wrap">
+      <label><span data-i18n="view">方向</span> <select id="resView"></select></label>
+      <label><span data-i18n="variables">變數</span> <select id="resVar"></select></label>
+      <label><span data-i18n="compareMode">比較模式</span>
+        <select id="resCmp">
+          <option value="none" data-i18n="cmpNone">無</option>
+          <option value="lr" data-i18n="cmpLR">左右疊圖</option>
+          <option value="session" data-i18n="cmpSession">前後測疊圖</option>
+          <option value="trend" data-i18n="trend">多日趨勢</option>
+        </select></label>
+    </div>
+    <p id="resInfo" class="hint"></p>
+    <div class="chartbox"><canvas id="chart"></canvas></div>
+    <div class="btns small">
+      <button id="saveBtn" class="primary" data-i18n="btnSave">儲存本次</button>
+      <button id="baselineBtn" data-i18n="btnSetBaseline">設為 0° 基準</button>
+      <button id="clearBaselineBtn" data-i18n="btnClearBaseline">清除基準</button>
+      <button id="csvBtn" data-i18n="btnCSV">下載 CSV</button>
+      <button id="videoBtn" data-i18n="btnVideo">下載影片</button>
+      <button id="pngBtn" data-i18n="btnPNG">下載圖表 PNG</button>
+      <button id="snapBtn" data-i18n="btnSnapshot">下載快照</button>
+      <button id="reportBtn" data-i18n="btnReport">HTML/PDF 報告</button>
+    </div>
+    <div class="row wrap top">
+      <img id="snapshot" class="snap" alt="">
+      <div class="grow">
+        <h3 data-i18n="flags">姿勢問題判讀</h3>
+        <div id="flags"></div>
+        <h3 data-i18n="summary">摘要表</h3>
+        <div id="summary" class="scroll"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 歷史 -->
+  <section id="tab-history" class="tab">
+    <h3 data-i18n="history">歷史紀錄</h3>
+    <div id="historyList"></div>
+  </section>
+
+  <!-- 設定 -->
+  <section id="tab-settings" class="tab">
+    <form id="settingsForm" class="form">
+      <label><span data-i18n="lang">語言</span><select name="lang"><option value="zh">中文</option><option value="en">English</option></select></label>
+      <label><span data-i18n="subject">受測者 ID</span><input name="subject"></label>
+      <label><span data-i18n="height">身高 (cm)</span><input name="height_cm" type="number" step="0.1" min="80" max="230"></label>
+      <label><span data-i18n="mass">體重 (kg)</span><input name="mass_kg" type="number" step="0.1" min="10" max="250"></label>
+      <label><span data-i18n="model">模型</span><select name="model"><option value="heavy">heavy（最準）</option><option value="full">full</option><option value="lite">lite（最快）</option></select></label>
+      <label><span data-i18n="camera">鏡頭</span><select name="facing"><option value="environment" data-i18n="camBack">後鏡頭</option><option value="user" data-i18n="camFront">前鏡頭</option></select></label>
+      <label><span data-i18n="resolution">解析度</span><select name="res"><option value="480">480p</option><option value="720">720p</option><option value="1080">1080p</option></select></label>
+      <label><span data-i18n="captureSec">記錄秒數</span><input name="captureSec" type="number" min="1" max="30"></label>
+      <label><span data-i18n="countdownSec">倒數秒數</span><input name="countdownSec" type="number" min="1" max="10"></label>
+      <label><span data-i18n="visThr">可信度閾值</span><input name="visThr" type="number" step="0.05" min="0" max="1"></label>
+      <label class="chk"><input name="mirrorFix" type="checkbox"><span data-i18n="mirrorFix">前鏡頭鏡像修正</span></label>
+      <label class="chk"><input name="autoCapture" type="checkbox"><span data-i18n="autoCapture">對位完成自動倒數</span></label>
+      <label class="chk"><input name="gesture" type="checkbox"><span data-i18n="gesture">舉手手勢觸發拍照</span></label>
+      <label class="chk"><input name="rawLm" type="checkbox"><span data-i18n="rawLm">CSV 含原始 33 點座標</span></label>
+      <label class="full"><span data-i18n="thresholds">判定閾值 (JSON)</span><textarea name="thr" rows="12" spellcheck="false"></textarea></label>
+      <div class="btns"><button type="submit" class="primary" data-i18n="saveSettings">儲存設定</button><button type="button" id="resetThrBtn" data-i18n="resetThr">還原預設閾值</button></div>
+      <p class="hint" data-i18n="needHttps"></p>
+      <p class="hint" data-i18n="iosHint"></p>
+      <p class="hint" id="verInfo"></p>
+    </form>
+  </section>
+
+  <div id="toast" class="toast"></div>
+</body>
+</html>
