@@ -15,9 +15,9 @@ import { createDemo } from './romdemo.js';
 import { requireAuth, signOut, useRedirectMode, redirectMode } from './auth.js';
 import { loadModule, wrapModule } from './ectmodule.js';
 import { renderPhoto, composeBoard, meanSDTable, varLabel } from './posturecard.js';
-import { DEFAULT_QUAD, drawFloorGuide } from './floorguide.js';
+import { DEFAULT_FLOOR, drawFloorGuide, floorHandles, dragFloor } from './floorguide.js';
 
-export const APP_VERSION = '1.6.2'; // 與 sw.js 的 CACHE 版本一起更新
+export const APP_VERSION = '1.6.3'; // 與 sw.js 的 CACHE 版本一起更新
 
 const $ = s => document.querySelector(s);
 const fin = Number.isFinite;
@@ -26,11 +26,11 @@ const fin = Number.isFinite;
 const DEF = {
   lang: 'zh', subject: 'S01', height_cm: 170, mass_kg: 65, model: 'heavy', facing: 'environment', res: '720',
   captureSec: 5, countdownSec: 5, visThr: 0.5, mirrorFix: false, autoCapture: true, gesture: true, rawLm: false, thr: DEFAULT_THR,
-  delegate: 'GPU', videoFmt: 'auto', voiceLevel: 'short', deviceId: '', floorOn: false, floorQuad: DEFAULT_QUAD.map(p => [...p]),
+  delegate: 'GPU', videoFmt: 'auto', voiceLevel: 'short', deviceId: '', floorOn: false, floor: { ...DEFAULT_FLOOR }, showTrails: false,
 };
 let cfg = loadCfg();
 function loadCfg() {
-  try { const c = JSON.parse(localStorage.getItem('pa.cfg') || '{}'); return { ...DEF, ...c, thr: { ...DEFAULT_THR, ...(c.thr || {}) } }; }
+  try { const c = JSON.parse(localStorage.getItem('pa.cfg') || '{}'); return { ...DEF, ...c, thr: { ...DEFAULT_THR, ...(c.thr || {}) }, floor: { ...DEFAULT_FLOOR, ...(c.floor || {}) } }; }
   catch { return { ...DEF }; }
 }
 const saveCfg = () => { try { localStorage.setItem('pa.cfg', JSON.stringify(cfg)); } catch { /* private mode */ } };
@@ -253,8 +253,8 @@ function loop(now) {
   let banner = '';
   if (S.phase === 'countdown') banner = String(Math.max(0, Math.ceil((S.countdownEnd - now) / 1000)));
   if (S.phase === 'record') banner = `REC ${((now - S.recStart) / 1000).toFixed(1)} s`;
-  drawOverlay(ctx, { lm, view, up: S.up, scale: S.liveScale, vars, trails: S.trails, vel, height_m: cfg.height_cm / 100, visThr: cfg.visThr, panel, banner });
-  if (cfg.floorOn || S.floorEdit) drawFloorGuide(ctx, cfg.floorQuad.map(([x, y]) => [x * W, y * H]), { editing: S.floorEdit, k: Math.max(W, H) / 900 });
+  drawOverlay(ctx, { lm, view, up: S.up, scale: S.liveScale, vars, trails: cfg.showTrails ? S.trails : null, vel: cfg.showTrails ? vel : null, height_m: cfg.height_cm / 100, visThr: cfg.visThr, panel, banner });
+  if (cfg.floorOn || S.floorEdit) drawFloorGuide(ctx, cfg.floor, { editing: S.floorEdit, k: Math.max(W, H) / 900, labels: floorLabels() });
   if (S.phase === 'record' && !S.runningMarked) { S.runningMarked = true; crumb('rec_running'); }
   // ROM 快照在疊圖之後拍，照片上才有骨架與角度
   if (S.mode === 'rom' && S.rom?.wantSnap && S.phase === 'record') { romSnap(S.rom.wantSnap); S.rom.wantSnap = null; }
@@ -992,11 +992,14 @@ $('#plumbSensorBtn').onclick = plumbSensor;
 $('#voiceLevelBtn').onclick = () => { cfg.voiceLevel = cfg.voiceLevel === 'full' ? 'short' : 'full'; saveCfg(); applyLang(); fillSettings(); toast($('#voiceLevelBtn').textContent); };
 $('#plumbManualBtn').onclick = plumbManual;
 // ---------------- 地面 A4 參考框（井字） ----------------
-// 「調整」模式：拖四個角對齊地上的 A4 紙（遠小近大），拖中間黃點可整個移動；設定會記住，下次只要看紙邊是否與框重合
+// 置中的等腰梯形，「調整」模式拖框外三個小黃點：下底（左右拉 = 寬度、上下拉 = 位置）、高、傾斜角度；設定會記住
+const floorK = () => Math.max(canvas.width, canvas.height) / 900;
+const floorLabels = () => ({ base: t('floorBase'), height: t('floorHeight'), angle: t('floorAngle') });
 function setFloorUI() {
   $('#floorBtn').textContent = t(cfg.floorOn ? 'btnFloorOn' : 'btnFloorOff');
   $('#floorEditBtn').textContent = t(S.floorEdit ? 'btnFloorDone' : 'btnFloorEdit');
   $('#floorEditBtn').classList.toggle('primary', !!S.floorEdit);
+  $('#trailBtn').textContent = t(cfg.showTrails ? 'btnTrailOn' : 'btnTrailOff');
   canvas.classList.toggle('editing', !!S.floorEdit);
 }
 $('#floorBtn').onclick = () => { cfg.floorOn = !cfg.floorOn; if (!cfg.floorOn) S.floorEdit = false; saveCfg(); setFloorUI(); };
@@ -1004,23 +1007,20 @@ $('#floorEditBtn').onclick = () => {
   S.floorEdit = !S.floorEdit; if (S.floorEdit) cfg.floorOn = true;
   saveCfg(); setFloorUI(); if (S.floorEdit) toast(t('floorHint'));
 };
-$('#floorResetBtn').onclick = () => { cfg.floorQuad = DEFAULT_QUAD.map(p => [...p]); saveCfg(); };
-const toCanvasNorm = e => { const r = canvas.getBoundingClientRect(); return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height]; };
+$('#floorResetBtn').onclick = () => { cfg.floor = { ...DEFAULT_FLOOR }; saveCfg(); };
+$('#trailBtn').onclick = () => { cfg.showTrails = !cfg.showTrails; saveCfg(); setFloorUI(); };
+const toCanvasPx = e => { const r = canvas.getBoundingClientRect(); return [(e.clientX - r.left) * canvas.width / r.width, (e.clientY - r.top) * canvas.height / r.height]; };
 canvas.addEventListener('pointerdown', e => {
   if (!S.floorEdit) return;
-  const p = toCanvasNorm(e), q = cfg.floorQuad, r = canvas.getBoundingClientRect();
-  const c = [(q[0][0] + q[1][0] + q[2][0] + q[3][0]) / 4, (q[0][1] + q[1][1] + q[2][1] + q[3][1]) / 4];
-  const pts = [...q, c], dist = pt => Math.hypot((pt[0] - p[0]) * r.width, (pt[1] - p[1]) * r.height);
-  const i = pts.reduce((best, pt, j) => (dist(pt) < dist(pts[best]) ? j : best), 0);
-  if (dist(pts[i]) > 60) return;                    // 60 px 內才抓得到
-  S.floorDrag = { i, last: p }; canvas.setPointerCapture(e.pointerId); e.preventDefault();
+  const p = toCanvasPx(e), r = canvas.getBoundingClientRect(), pxPerCss = canvas.width / r.width;
+  const hs = floorHandles(cfg.floor, canvas.width, canvas.height, floorK());
+  const best = hs.map(h => ({ h, d: Math.hypot(h.at[0] - p[0], h.at[1] - p[1]) / pxPerCss })).sort((a, b) => a.d - b.d)[0];
+  if (!best || best.d > 40) return;                 // 40 px（螢幕）內才抓得到
+  S.floorDrag = best.h.id; canvas.setPointerCapture(e.pointerId); e.preventDefault();
 });
 canvas.addEventListener('pointermove', e => {
   if (!S.floorDrag) return;
-  const p = toCanvasNorm(e).map(x => Math.min(1, Math.max(0, x))), d = S.floorDrag;
-  if (d.i < 4) cfg.floorQuad[d.i] = p;
-  else { const dx = p[0] - d.last[0], dy = p[1] - d.last[1]; cfg.floorQuad = cfg.floorQuad.map(([x, y]) => [x + dx, y + dy]); }
-  d.last = p;
+  dragFloor(cfg.floor, S.floorDrag, toCanvasPx(e), canvas.width, canvas.height, floorK());
 });
 const endDrag = () => { if (S.floorDrag) { S.floorDrag = null; saveCfg(); } };
 canvas.addEventListener('pointerup', endDrag); canvas.addEventListener('pointercancel', endDrag);
