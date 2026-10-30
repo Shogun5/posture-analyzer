@@ -3,7 +3,7 @@
 // 每個動作只在「適合的觀測面」量測（2D 只能量到與鏡頭平行的平面）：
 //   正面（額狀面）：肩外展/內收、軀幹側彎、頸側屈、髖外展
 //   側面（矢狀面）：肩屈曲/伸展、肘屈曲、髖屈曲/伸展、膝屈曲、軀幹前彎/後仰、頸屈曲/伸展
-// 角度 = 變數（biomech.computeVars）× sign − 開始 1.5 秒靜態站姿平均（0° 基準）
+// 角度 = 變數（biomech.computeVars）× sign，以鉛垂線/解剖中立位為 0°（絕對角度）；起始姿勢另存（頸屈伸例外，見 analyzeRom）
 // 常模：AAOS（Greene & Heckman 1994）；頸椎採講義 P138 修訂註記（AAOS/Youdas）；肩內收採 Magee
 
 import { processRecording } from './biomech.js';
@@ -58,7 +58,7 @@ export const MOVES = [
     pos: { to: 80, zh: '前彎', en: 'flexion', norm: 80, src: 'AAOS（胸腰椎）', cueZh: '身體慢慢往前彎到最低', cueEn: 'Bend forward slowly as far as you can', sZh: '往前彎', sEn: 'Bend forward' },
     neg: { to: -25, zh: '後仰', en: 'extension', norm: 25, src: 'AAOS（胸腰椎）', cueZh: '雙手扶腰，身體往後仰', cueEn: 'Hands on hips, lean back', sZh: '扶腰往後仰', sEn: 'Lean back' },
     demo: v => ({ trunkFlex: v }), arcs: [['P', 'up', 'trunkUp']] },
-  { id: 'neck_flex', view: 'right', zh: '頸部 屈曲／伸展', en: 'Neck flexion / extension',
+  { id: 'neck_flex', view: 'right', ref: 'start', zh: '頸部 屈曲／伸展', en: 'Neck flexion / extension',
     vars: [{ name: 'head_pitch_deg', side: '', sign: -1 }], lm: [0, 8, 12],
     introZh: '坐姿或站姿，身體不動。聽口令，下巴往胸口低頭到最低，回正後抬頭往後仰到最高。',
     introEn: 'Keep your trunk still. On cue, tuck your chin to your chest, come back, then look up and tilt your head back.',
@@ -135,27 +135,54 @@ export function cueText(m, cue, lang, short = false) {
   }
 }
 
+/** 角度展開：相鄰兩點跳超過 180° 視為繞圈（例如手舉過頭 170° → −175°），補回 ±360° 讓曲線連續 */
+export function unwrapDeg(a) {
+  const out = [...a]; let off = 0, prev = NaN;
+  for (let i = 0; i < out.length; i++) {
+    if (!Number.isFinite(out[i])) continue;
+    if (Number.isFinite(prev)) { const d = out[i] + off - prev; if (d > 180) off -= 360; else if (d < -180) off += 360; }
+    out[i] += off; prev = out[i];
+  }
+  return out;
+}
+
+/** 起始姿勢角度：開始 ~2 秒內「最穩定」的 0.5 秒（標準差最小）取中位數。受測者聽到口令時晃動也不影響 */
+export function stableStart(f, t, until = BASE_SEC + 0.5, win = 0.5) {
+  let best = { sd: Infinity, med: NaN };
+  for (let i = 0; i < f.length && t[i] <= until - win; i++) {
+    const w = []; for (let j = i; j < f.length && t[j] <= t[i] + win; j++) if (Number.isFinite(f[j])) w.push(f[j]);
+    if (w.length < 5) continue;
+    const mu = w.reduce((s, x) => s + x, 0) / w.length, sd = Math.sqrt(w.reduce((s, x) => s + (x - mu) ** 2, 0) / w.length);
+    if (sd < best.sd) { w.sort((a, b) => a - b); best = { sd, med: w[w.length >> 1] }; }
+  }
+  return Number.isFinite(best.med) ? best.med : f.find(Number.isFinite) ?? NaN;
+}
+
 /**
- * 分析一次 ROM 記錄：沿用姿勢分析的前處理（內插、30 Hz、移動平均），
- * 再以開始 BASE_SEC 秒平均為 0°，取正向最大與反向最大
+ * 分析一次 ROM 記錄：沿用姿勢分析的前處理（內插、30 Hz、移動平均）。
+ * 主要結果 = 「絕對角度」：以校正後鉛垂線/解剖中立位為 0°（手臂自然下垂、身體直立 = 0°），不扣起始姿勢，
+ *   開始時受測者若晃動也不會影響結果。
+ * 例外：頸部屈伸（耳–鼻連線）沒有可靠的解剖 0°，改以起始姿勢為 0°（m.ref = 'start'）。
+ * 另外保留起始姿勢角度（start）與相對起始的變化量（relPos / relNeg）。
  */
 export function analyzeRom(m, frames, ctx) {
   const r = processRecording(frames, { ...ctx, view: m.view });
-  const t = r.t, out = { id: m.id, view: m.view, t, tRaw: r.tRaw, series: {}, raw: {}, base: {}, metrics: {}, qc: r.qc };
+  const t = r.t, out = { id: m.id, view: m.view, ref: m.ref ?? 'abs', t, tRaw: r.tRaw, series: {}, raw: {}, base: {}, metrics: {}, qc: r.qc };
   for (const v of m.vars) {
     const sign = v.sign ?? 1;
-    const f = (r.filt[v.name] || []).map(x => sign * x);
-    const baseVals = f.filter((x, i) => t[i] < BASE_SEC && Number.isFinite(x));
-    const base = baseVals.length ? baseVals.reduce((a, b) => a + b, 0) / baseVals.length : f.find(Number.isFinite) ?? 0;
-    const rel = f.map(x => x - base);
-    const st = summarize(rel, t);
+    const abs = unwrapDeg((r.filt[v.name] || []).map(x => sign * x));
+    const start = stableStart(abs, t);
+    const f = out.ref === 'start' ? abs.map(x => x - start) : abs;   // 主要結果曲線
+    const st = summarize(f, t);
     const valid = Math.round(100 * (r.raw[v.name] || []).filter(Number.isFinite).length / Math.max(1, r.tRaw.length));
     const pos = st.max, neg = m.neg ? st.min : NaN;
-    out.series[v.name] = rel;
-    out.raw[v.name] = (r.raw[v.name] || []).map(x => sign * x);
-    out.base[v.name] = base;
+    out.series[v.name] = f;
+    out.raw[v.name] = unwrapDeg((r.raw[v.name] || []).map(x => sign * x));
+    out.base[v.name] = start;
+    const ref0 = out.ref === 'start' ? 0 : start;
     out.metrics[v.name] = {
-      side: v.side, pos, tPos: st.tmax, neg, tNeg: m.neg ? st.tmin : NaN, rom: m.neg ? pos - neg : pos,
+      side: v.side, start, pos, tPos: st.tmax, neg, tNeg: m.neg ? st.tmin : NaN, rom: m.neg ? pos - neg : pos,
+      relPos: pos - ref0, relNeg: m.neg ? neg - ref0 : NaN,
       normPos: m.pos.norm, normNeg: m.neg?.norm ?? NaN,
       pctPos: 100 * pos / m.pos.norm, pctNeg: m.neg ? 100 * -neg / m.neg.norm : NaN, validPct: valid,
     };

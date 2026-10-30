@@ -8,7 +8,7 @@ import { speak, beep, unlockAudio, startListening, stopListening, speechSupporte
 import { CanvasRecorder } from './recorder.js';
 import * as store from './storage.js';
 import { timeSeries, trend, chartPNG } from './charts.js';
-import { downloadCSV, downloadVideos, download, dataURLtoBlob, reportHTML, KEY_VARS } from './export.js';
+import { downloadCSV, downloadVideos, download, dataURLtoBlob, reportHTML, KEY_VARS, fileBase } from './export.js';
 import { sgDerivative } from './filters.js';
 import { MOVES, BASE_SEC, timeline, demoValueAt, cueText, analyzeRom, asymmetry } from './rom.js';
 import { createDemo } from './romdemo.js';
@@ -16,7 +16,7 @@ import { requireAuth, signOut, useRedirectMode, redirectMode } from './auth.js';
 import { loadModule, wrapModule } from './ectmodule.js';
 import { renderPhoto, composeBoard, meanSDTable, varLabel } from './posturecard.js';
 
-export const APP_VERSION = '1.4.2'; // 與 sw.js 的 CACHE 版本一起更新
+export const APP_VERSION = '1.5.0'; // 與 sw.js 的 CACHE 版本一起更新
 
 const $ = s => document.querySelector(s);
 const fin = Number.isFinite;
@@ -468,7 +468,8 @@ function stepRom(now, det, detView, vars) {
       const x = vars?.[vd.name]; if (!fin(x)) continue;
       const val = (vd.sign ?? 1) * x, L = (S.rom.live[vd.name] ??= { base: [], cur: NaN, max: -Infinity, min: Infinity });
       if (el < BASE_SEC) L.base.push(val);
-      L.cur = val - (L.base.length ? avg(L.base) : val);
+      // 即時顯示與結果一致：絕對角度（鉛垂/解剖中立 = 0°）；頸屈伸（ref = start）才扣起始姿勢
+      L.cur = m.ref === 'start' ? val - (L.base.length ? avg(L.base) : val) : val;
       if (el >= BASE_SEC) { L.max = Math.max(L.max, L.cur); L.min = Math.min(L.min, L.cur); }
     }
     if (el >= duration) finishRomRecording();
@@ -723,16 +724,16 @@ $('#boardBtn').onclick = async () => {
   const s = S.viewSession; if (!s) return toast(t('noSession'));
   const cvs = []; for (const vw of VIEWS) cvs.push(await photoCanvas(s, vw).catch(() => null));
   const board = composeBoard(cvs); if (!board) return toast(t('noPhoto'));
-  download(await dataURLtoBlob(board.toDataURL('image/jpeg', 0.92)), `posture_${s.subject}_${s.date.slice(0, 10)}.jpg`);
+  download(await dataURLtoBlob(board.toDataURL('image/jpeg', 0.92)), `${fileBase(s, 'posture')}_photos.jpg`);
 };
 $('#reportBtn').onclick = async () => {
   const s = S.viewSession; if (!s) return toast(t('noSession'));
   const w = window.open('', '_blank');          // 先開分頁（在點擊當下，避免被擋），照片畫好後再填入
   const photos = {};
   for (const vw of VIEWS) { const cv = await photoCanvas(s, vw).catch(() => null); if (cv) photos[vw] = cv.toDataURL('image/jpeg', 0.88); }
-  const html = reportHTML(s, photos, S.compare, S.baseline?.views ?? null);
+  const html = reportHTML(s, photos, S.compare, S.baseline?.views ?? null, 'posture');
   const blob = new Blob([html], { type: 'text/html' });
-  download(blob, `report_${s.subject}_${s.date.slice(0, 10)}.html`);
+  download(blob, `report_${fileBase(s, 'posture')}.html`);
   if (w) w.location.href = URL.createObjectURL(blob);   // 新分頁 → 列印 → 另存 PDF
   else toast('HTML downloaded');
 };
@@ -762,18 +763,18 @@ function renderRom() {
   const f = x => (fin(x) ? x.toFixed(0) : '–');
   const pctCell = p => `<td class="${fin(p) && p < 75 ? 'low' : fin(p) && p < 90 ? 'warn' : ''}">${fin(p) ? p.toFixed(0) + '%' : '–'}</td>`;
   const en = getLang() === 'en';
-  const head = `<tr><th>${t('romMove')}</th><th>${t('side')}</th><th>${t('direction')}</th><th>${t('peak')}</th><th>${t('norm')}</th><th>${t('pctNorm')}</th><th>${t('direction')}</th><th>${t('peak')}</th><th>${t('norm')}</th><th>${t('pctNorm')}</th><th>${t('romTotal')}</th><th>${t('validPct')}</th>${C ? `<th>${t('preRom')}</th><th>Δ</th>` : ''}</tr>`;
+  const head = `<tr><th>${t('romMove')}</th><th>${t('side')}</th><th>${t('romStart')}</th><th>${t('direction')}</th><th>${t('peak')}</th><th>${t('norm')}</th><th>${t('pctNorm')}</th><th>${t('direction')}</th><th>${t('peak')}</th><th>${t('norm')}</th><th>${t('pctNorm')}</th><th>${t('romTotal')}</th><th>${t('validPct')}</th>${C ? `<th>${t('preRom')}</th><th>Δ</th>` : ''}</tr>`;
   let rows = '';
   for (const id of ids) {
     const m = MOVES.find(x => x.id === id);
     for (const [vn, mt] of Object.entries(R[id].metrics)) {
       const c = C?.[id]?.metrics?.[vn];
-      rows += `<tr><td>${romName(m)}</td><td>${mt.side ? t(mt.side === 'R' ? 'right' : 'left') : ''}</td><td>${en ? m.pos.en : m.pos.zh}</td><td>${f(mt.pos)}</td><td>${m.pos.norm}</td>${pctCell(mt.pctPos)}`
+      rows += `<tr><td>${romName(m)}</td><td>${mt.side ? t(mt.side === 'R' ? 'right' : 'left') : ''}</td><td>${f(mt.start)}</td><td>${en ? m.pos.en : m.pos.zh}</td><td>${f(mt.pos)}</td><td>${m.pos.norm}</td>${pctCell(mt.pctPos)}`
         + (m.neg ? `<td>${en ? m.neg.en : m.neg.zh}</td><td>${f(-mt.neg)}</td><td>${m.neg.norm}</td>${pctCell(mt.pctNeg)}` : '<td></td><td></td><td></td><td></td>')
         + `<td>${f(mt.rom)}</td><td>${mt.validPct}</td>${C ? `<td>${f(c?.rom)}</td><td>${fin(c?.rom) ? (mt.rom - c.rom >= 0 ? '+' : '') + (mt.rom - c.rom).toFixed(0) : '–'}</td>` : ''}</tr>`;
     }
   }
-  $('#romTable').innerHTML = `<table class="tbl">${head}${rows}</table><p class="hint">%常模 &lt; 75% 紅色、&lt; 90% 橘色。常模：AAOS；頸椎依講義 P138；肩內收依 Magee。</p>`;
+  $('#romTable').innerHTML = `<table class="tbl">${head}${rows}</table><p class="hint">${t('romRefNote')}</p>`;
   const asym = asymmetry(R);
   $('#romAsym').innerHTML = asym.length ? `<table class="tbl"><tr><th>${t('romMove')}</th><th>${t('right')}</th><th>${t('left')}</th><th>${t('asymPct')}</th></tr>${asym.map(a => `<tr><td>${a.label}</td><td>${f(a.R)}</td><td>${f(a.L)}</td><td class="${a.asymPct > 15 ? 'low' : a.asymPct > 10 ? 'warn' : ''}">${a.asymPct.toFixed(0)}%</td></tr>`).join('')}</table>` : '';
   const prev = $('#romSel').value;
@@ -786,16 +787,24 @@ function renderRom() {
 }
 function drawRomChart() {
   const R = S.viewSession?.rom, id = $('#romSel').value; if (!R?.[id]) return;
-  const res = R[id], series = Object.entries(res.series).map(([vn, y]) => ({ label: `${vn.replace(/_deg$/, '')} Δ`, t: res.t, y }));
+  const en = getLang() === 'en', sideName = vn => (/^R_/.test(vn) ? t('right') : /^L_/.test(vn) ? t('left') : '');
+  const unit = res.ref === 'start' ? (en ? 'angle vs start (°)' : '相對起始角度 (°)') : (en ? 'angle vs plumb / neutral (°)' : '角度（相對鉛垂／中立位）(°)');
+  const series = Object.entries(res.series).map(([vn, y]) => ({ label: `${sideName(vn)}${en ? ' angle' : '角度'}`, t: res.t, y }));
   const c = S.compare?.rom?.[id];
-  if (c && series.length < 3) { const [vn, y] = Object.entries(c.series)[0]; series.push({ label: `${vn.replace(/_deg$/, '')} (${S.compare.date.slice(0, 10)})`, t: c.t, y, dash: true }); }
-  timeSeries($('#romChart'), series, 'Δ angle (°)');
+  if (c && series.length < 3) { const [vn, y] = Object.entries(c.series)[0]; series.push({ label: `${sideName(vn)} (${S.compare.date.slice(0, 10)})`, t: c.t, y, dash: true }); }
+  timeSeries($('#romChart'), series, unit);
 }
 $('#romSel').addEventListener('change', drawRomChart);
 $('#romCsvBtn').onclick = () => (S.viewSession ? downloadCSV(S.viewSession, cfg.rawLm) : toast(t('noSession')));
 $('#romVideoBtn').onclick = () => (S.viewSession ? downloadVideos(S.viewSession) : toast(t('noSession')));
 $('#romPngBtn').onclick = async () => { const u = chartPNG($('#romChart')); if (u) download(await dataURLtoBlob(u), `rom_${$('#romSel').value}.png`); };
-$('#romReportBtn').onclick = () => $('#reportBtn').onclick();
+// AROM 報告與姿勢報告分開
+$('#romReportBtn').onclick = () => {
+  const s = S.viewSession; if (!s?.rom || !Object.keys(s.rom).length) return toast(t('romNone'));
+  const blob = new Blob([reportHTML(s, {}, S.compare, null, 'AROM')], { type: 'text/html' });
+  download(blob, `report_${fileBase(s, 'AROM')}.html`);
+  const w = window.open(URL.createObjectURL(blob), '_blank'); if (!w) toast('HTML downloaded');
+};
 $('#romBtn').onclick = startRomTest;
 
 // ---------------- ECT 互動評估模組 ----------------
@@ -816,7 +825,7 @@ $('#ectReload').onclick = () => { S.ectLoaded = false; loadEct(); };
 // ---------------- 歷史 ----------------
 async function renderHistory() {
   const list = (await store.listSessions()).reverse();
-  $('#historyList').innerHTML = list.length ? list.map(s => `<div class="hist"><div><b>${s.subject}</b> · ${new Date(s.date).toLocaleString()}<br><small>${VIEWS.filter(vw => s.views?.[vw]).map(vw => t('view_' + vw)).join('、')}${s.rom && Object.keys(s.rom).length ? ` · ROM ×${Object.keys(s.rom).length}` : ''}</small></div>
+  $('#historyList').innerHTML = list.length ? list.map(s => `<div class="hist"><div><b>${s.subject}</b> · ${new Date(s.date).toLocaleString()}<br><small>${VIEWS.filter(vw => s.views?.[vw]).map(vw => t('view_' + vw)).join('、')}${s.rom && Object.keys(s.rom).length ? ` · AROM ×${Object.keys(s.rom).length}` : ''}</small></div>
     <div class="btns small"><button data-act="load" data-id="${s.id}">${t('btnLoad')}</button><button data-act="cmp" data-id="${s.id}">${t('btnCompare')}</button><button data-act="del" data-id="${s.id}">${t('btnDelete')}</button></div></div>`).join('') : `<p class="hint">${t('noSession')}</p>`;
 }
 $('#historyList').addEventListener('click', async e => {
