@@ -15,7 +15,7 @@ import { createDemo } from './romdemo.js';
 import { requireAuth, signOut, useRedirectMode, redirectMode } from './auth.js';
 import { loadModule, wrapModule } from './ectmodule.js';
 
-export const APP_VERSION = '1.3.1'; // 與 sw.js 的 CACHE 版本一起更新
+export const APP_VERSION = '1.3.2'; // 與 sw.js 的 CACHE 版本一起更新
 
 const $ = s => document.querySelector(s);
 const fin = Number.isFinite;
@@ -109,7 +109,28 @@ async function startCamera() {
     $('#guideBtn').disabled = false; $('#capBtn').disabled = false; $('#romBtn').disabled = false;
     crumb('live');
     if (!S.looping) { S.looping = true; requestAnimationFrame(loop); }
+    setCamButton(true);
   } catch (e) { crumb('idle'); toast(t('camErr') + e.message); console.error(e); }
+}
+
+/** 關閉相機：中止進行中的拍攝/ROM 測試、停止串流與分析迴圈、清空畫面（已完成的結果保留） */
+function stopCamera() {
+  if (S.mode === 'rom') romCommand('stop'); else if (S.phase !== 'idle') command('stop');
+  S.looping = false;
+  S.stream?.getTracks().forEach(tr => tr.stop());   // 釋放相機（瀏覽器的相機指示燈會熄滅）
+  S.stream = null; video.srcObject = null;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  S.hist = []; Object.values(S.trails).forEach(a => (a.length = 0)); S.liveScale = NaN;
+  $('#guideBtn').disabled = true; $('#capBtn').disabled = true; $('#romBtn').disabled = true;
+  $('#msg').textContent = ''; $('#status').textContent = t('cameraOff');
+  crumb('idle');
+  setCamButton(false);
+}
+function setCamButton(on) {
+  const b = $('#camBtn');
+  b.dataset.i18n = on ? 'btnCameraOff' : 'btnCamera';
+  b.textContent = t(b.dataset.i18n);
+  b.classList.toggle('primary', !on); b.classList.toggle('danger', on);
 }
 async function ensureModel() {
   const key = `${cfg.model}/${cfg.delegate}`;
@@ -751,7 +772,7 @@ function applyLang() {
   if (S.voiceOn) { stopListening(); startVoice(); }
 }
 $('#langBtn').onclick = () => { cfg.lang = cfg.lang === 'zh' ? 'en' : 'zh'; saveCfg(); applyLang(); fillSettings(); };
-$('#camBtn').onclick = startCamera;
+$('#camBtn').onclick = () => (S.stream ? stopCamera() : startCamera());
 // 前/後鏡頭切換：存入設定；相機已開則立即重啟。鉛垂校正與鏡頭方向有關，切換後需重新校正
 $('#flipBtn').onclick = () => {
   if (S.phase === 'record' || S.phase === 'countdown') return;
