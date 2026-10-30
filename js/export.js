@@ -58,6 +58,7 @@ export function sessionCSV(s, includeRawLandmarks = false) {
       L.push(`${pre},summary,,,${b}__start_deg,${num(r.base[vn])}`, `${pre},summary,,,${b}__pos_rel_start_deg,${num(mt.relPos)}`, `${pre},summary,,,${b}__neg_rel_start_deg,${num(mt.relNeg)}`, `${pre},summary,,,${b}__pos_peak_deg,${num(mt.pos)}`, `${pre},summary,,,${b}__pos_t_s,${num(mt.tPos)}`,
         `${pre},summary,,,${b}__neg_peak_deg,${num(mt.neg)}`, `${pre},summary,,,${b}__neg_t_s,${num(mt.tNeg)}`, `${pre},summary,,,${b}__rom_deg,${num(mt.rom)}`,
         `${pre},summary,,,${b}__pos_pct_norm,${num(mt.pctPos)}`, `${pre},summary,,,${b}__neg_pct_norm,${num(mt.pctNeg)}`, `${pre},summary,,,${b}__valid_pct,${num(mt.validPct)}`);
+      if (mt.comp) L.push(`${pre},summary,,,${b}__comp_deg,${num(mt.comp.deg)}`);
     }
   }
   return '﻿' + L.join('\n'); // BOM 讓 Excel 正確顯示中文
@@ -82,7 +83,8 @@ function romSection(s, compare) {
     const r = R[m.id]; if (!r) continue;
     for (const [vn, mt] of Object.entries(r.metrics)) {
       const c = C?.[m.id]?.metrics?.[vn];
-      rows += `<tr><td>${escH(en ? m.en : m.zh)}</td><td>${mt.side}</td><td>${f(mt.start)}°</td><td>${escH(en ? m.pos.en : m.pos.zh)} ${f(mt.pos)}° / ${m.pos.norm}° (${f(mt.pctPos)}%)</td>`
+      const compNote = mt.comp?.warn ? `<br><small style="color:#b45309">⚠ ${escH(en ? m.comp.en : m.comp.zh)} ${f(mt.comp.deg)}°</small>` : '';
+      rows += `<tr><td>${escH(en ? m.en : m.zh)}${compNote}</td><td>${mt.side}</td><td>${f(mt.start)}°</td><td>${escH(en ? m.pos.en : m.pos.zh)} ${f(mt.pos)}° / ${m.pos.norm}° (${f(mt.pctPos)}%)</td>`
         + `<td>${m.neg ? `${escH(en ? m.neg.en : m.neg.zh)} ${f(-mt.neg)}° / ${m.neg.norm}° (${f(mt.pctNeg)}%)` : ''}</td><td>${f(mt.rom)}</td><td>${mt.validPct}</td>${C ? `<td>${f(c?.rom)}</td>` : ''}</tr>`;
     }
   }

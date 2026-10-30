@@ -53,6 +53,8 @@
       <!-- iOS Safari 必須 playsinline + muted 才能內嵌播放相機 -->
       <video id="video" playsinline muted autoplay></video>
       <canvas id="stage"></canvas>
+      <!-- 鏡像顯示（像照鏡子）；錄影與量測仍用上面的主畫布 -->
+      <canvas id="mview" class="offview"></canvas>
       <!-- ROM 測試示範動畫（SVG 向量人形） -->
       <svg id="romDemo" class="romdemo" hidden></svg>
       <div id="msg" class="msg"></div>
@@ -82,6 +84,7 @@
       <button id="floorEditBtn">調整井字框</button>
       <button id="floorResetBtn" data-i18n="btnFloorReset">重設井字框</button>
       <button id="trailBtn">軌跡：關</button>
+      <button id="mirrorBtn">鏡像：關</button>
     </div>
     <p id="heard" class="hint"></p>
   </section>

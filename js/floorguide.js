@@ -4,7 +4,9 @@
 // 調整點用虛線拉到框外，不會遮住紙。
 // f = { by: 下底 y（0–1）, w: 下底寬（0–1，相對畫面寬）, h: 高（0–1，相對畫面高）, ang: 腰傾斜角（度） }
 
-export const DEFAULT_FLOOR = { by: 0.93, w: 0.24, h: 0.13, ang: 12 };
+import { queueText } from './overlay.js';
+
+export const DEFAULT_FLOOR ={ by: 0.93, w: 0.24, h: 0.13, ang: 12 };
 
 /** 依參數算出像素座標四角（0 遠左、1 遠右、2 近右、3 近左） */
 export function floorQuad(f, W, H) {
@@ -71,11 +73,8 @@ export function drawFloorGuide(ctx, f, { editing = false, k = 1, labels = {} } =
     line(hd.to, hd.at, 'rgba(250,204,21,.95)', 1.5, [5, 4]);
     ctx.save(); ctx.fillStyle = '#facc15'; ctx.strokeStyle = '#0f172a'; ctx.lineWidth = 2 * k;
     ctx.beginPath(); ctx.arc(hd.at[0], hd.at[1], 8 * k, 0, 7); ctx.fill(); ctx.stroke();
-    const txt = labels[hd.id] || '';
-    if (txt) {
-      ctx.font = `700 ${13 * k}px system-ui, "Noto Sans TC", sans-serif`; ctx.lineWidth = 3 * k; ctx.strokeStyle = 'rgba(0,0,0,.7)'; ctx.fillStyle = '#fde047';
-      ctx.strokeText(txt, hd.at[0] + 12 * k, hd.at[1] + 5 * k); ctx.fillText(txt, hd.at[0] + 12 * k, hd.at[1] + 5 * k);
-    }
     ctx.restore();
+    const txt = labels[hd.id] || '';
+    if (txt) queueText({ txt, x: hd.at[0] + 12 * k, y: hd.at[1] + 5 * k, font: `700 ${13 * k}px system-ui, "Noto Sans TC", sans-serif`, fill: '#fde047', stroke: 'rgba(0,0,0,.7)', lw: 3 * k });
   }
 }

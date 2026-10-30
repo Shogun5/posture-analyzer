@@ -145,6 +145,8 @@ export function computeVars(P, view, W = null) {
       [`${S}_hip_flex_deg`]: wrap(trunk - thigh),
       [`${S}_knee_flex_deg`]: wrap(shank - thigh),
       [`${S}_ankle_DF_deg`]: wrap(shank + foot),
+      // 肩外展 90° 時的旋轉：前臂（肘→腕）相對水平前方的角度，往上（外轉）為正
+      [`${S}_sh_rot_deg`]: Math.atan2(wr[1] - el[1], wr[0] - el[0]) * D,
       CVA_proxy_deg: Math.atan2(ear[1] - sh[1], ear[0] - sh[0]) * D, // 耳-肩連線與水平夾角（90° = 耳在肩正上方）
       head_pitch_deg: Math.atan2(P[0][1] - ear[1], P[0][0] - ear[0]) * D, // 耳→鼻相對水平，抬下巴為正
       // Kendall 鉛垂線：以外踝 (ankle) 為基準的前後偏移，向前為正

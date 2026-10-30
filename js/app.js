@@ -3,7 +3,7 @@ import { t, v, setLang, getLang, setVoiceLevel, getVoiceLevel } from './i18n.js'
 import { createPose, detect, MP_VERSION } from './pose.js';
 import { VIEWS, isSag, makeTransform, computeVars, computeCOM, detectView, enforceLR, upFromGravity, processRecording, EYE_HEIGHT_RATIO } from './biomech.js';
 import { assessPosture, DEFAULT_THR } from './posture.js';
-import { drawOverlay } from './overlay.js';
+import { drawOverlay, flushText } from './overlay.js';
 import { speak, beep, unlockAudio, startListening, stopListening, speechSupported, isSpeaking } from './voice.js';
 import { CanvasRecorder } from './recorder.js';
 import * as store from './storage.js';
@@ -17,7 +17,7 @@ import { loadModule, wrapModule } from './ectmodule.js';
 import { renderPhoto, composeBoard, meanSDTable, varLabel } from './posturecard.js';
 import { DEFAULT_FLOOR, drawFloorGuide, floorHandles, dragFloor } from './floorguide.js';
 
-export const APP_VERSION = '1.6.4'; // 與 sw.js 的 CACHE 版本一起更新
+export const APP_VERSION = '1.7.0'; // 與 sw.js 的 CACHE 版本一起更新
 
 const $ = s => document.querySelector(s);
 const fin = Number.isFinite;
@@ -26,7 +26,7 @@ const fin = Number.isFinite;
 const DEF = {
   lang: 'zh', subject: 'S01', height_cm: 170, mass_kg: 65, model: 'heavy', facing: 'environment', res: '720',
   captureSec: 5, countdownSec: 5, visThr: 0.5, mirrorFix: false, autoCapture: true, gesture: true, rawLm: false, thr: DEFAULT_THR,
-  delegate: 'GPU', videoFmt: 'auto', voiceLevel: 'short', deviceId: '', floorOn: false, floor: { ...DEFAULT_FLOOR }, showTrails: false,
+  delegate: 'GPU', videoFmt: 'auto', voiceLevel: 'short', deviceId: '', floorOn: false, floor: { ...DEFAULT_FLOOR }, showTrails: false, mirrorView: false,
 };
 let cfg = loadCfg();
 function loadCfg() {
@@ -78,6 +78,8 @@ const S = {
   session: null, viewSession: null, compare: null, baseline: null, voiceOn: false,
 };
 const canvas = $('#stage'), ctx = canvas.getContext('2d', { willReadFrequently: false }), video = $('#video');
+// 鏡像顯示用的第二張畫布：只給受測者看（像照鏡子）；錄影、快照、量測都用未鏡像的主畫布
+const mview = $('#mview'), mctx = mview.getContext('2d');
 const curView = () => VIEWS[S.viewIdx];
 
 function newSession() {
@@ -166,7 +168,7 @@ function stopCamera() {
   S.looping = false;
   S.stream?.getTracks().forEach(tr => tr.stop());   // 釋放相機（瀏覽器的相機指示燈會熄滅）
   S.stream = null; video.srcObject = null;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.clearRect(0, 0, canvas.width, canvas.height); mctx.clearRect(0, 0, mview.width, mview.height);
   S.hist = []; Object.values(S.trails).forEach(a => (a.length = 0)); S.liveScale = NaN;
   $('#guideBtn').disabled = true; $('#capBtn').disabled = true; $('#romBtn').disabled = true;
   $('#msg').textContent = ''; $('#status').textContent = t('cameraOff');
@@ -255,6 +257,12 @@ function loop(now) {
   if (S.phase === 'record') banner = `REC ${((now - S.recStart) / 1000).toFixed(1)} s`;
   drawOverlay(ctx, { lm, view, up: S.up, scale: S.liveScale, vars, trails: cfg.showTrails ? S.trails : null, vel: cfg.showTrails ? vel : null, height_m: cfg.height_cm / 100, visThr: cfg.visThr, panel, banner });
   if (cfg.floorOn || S.floorEdit) drawFloorGuide(ctx, cfg.floor, { editing: S.floorEdit, k: Math.max(W, H) / 900, labels: floorLabels() });
+  // 鏡像顯示：先把（不含文字的）畫面左右翻轉複製過去，文字再各自正著畫
+  if (cfg.mirrorView) {
+    if (mview.width !== W || mview.height !== H) { mview.width = W; mview.height = H; }
+    mctx.setTransform(-1, 0, 0, 1, W, 0); mctx.drawImage(canvas, 0, 0); mctx.setTransform(1, 0, 0, 1, 0, 0);
+  }
+  flushText(cfg.mirrorView ? [{ ctx }, { ctx: mctx, mirrorW: W }] : [{ ctx }]);
   if (S.phase === 'record' && !S.runningMarked) { S.runningMarked = true; crumb('rec_running'); }
   // ROM 快照在疊圖之後拍，照片上才有骨架與角度
   if (S.mode === 'rom' && S.rom?.wantSnap && S.phase === 'record') { romSnap(S.rom.wantSnap); S.rom.wantSnap = null; }
@@ -451,12 +459,14 @@ const avg = a => a.reduce((s, x) => s + x, 0) / a.length;
 function startRomTest() {
   unlockAudio();
   if (!S.pose) { toast(t('cameraOff')); return; }
+  syncRomSel();
   const list = MOVES.filter(m => !cfg.romSel || cfg.romSel.includes(m.id));
   if (!list.length) { toast(t('romNone')); showTab('rom'); return; }
   S.mode = 'rom'; S.guided = false;
   S.session = newSession(); S.session.rom = {};
-  S.rom = { list, idx: 0, phaseStart: 0, cueIdx: 0, live: {}, snaps: {} };
+  S.rom = { list, idx: 0, phaseStart: 0, cueIdx: 0, live: {}, snaps: {}, lastView: null };
   $('#romDemo').toggleAttribute('hidden', false); // SVG 元素沒有 .hidden 屬性
+  $('.stage').classList.add('solo');              // AROM：受測者站在遠處，提示字放大
   speak(v('romIntro'), { interrupt: true });
   enterRomIntro(true);
 }
@@ -468,11 +478,16 @@ function enterRomIntro(queue = false) {
   // 簡易：只講動作名稱；完整：編號 + 名稱 + 說明
   const full = getVoiceLevel() === 'full', en = getLang() === 'en';
   const name = romName(m).replace(/（.*?）|\(.*?\)/g, '').replace(/[／/]/g, en ? ' and ' : '、');
-  speak(full ? `${S.rom.idx + 1}. ${name}。${en ? m.introEn : m.introZh}` : `${name}。`, { interrupt: !queue });
-  $('#msg').textContent = `${S.rom.idx + 1}/${S.rom.list.length}  ${name}`;   // 換掉上一個動作留下的口令（例如「回來」）
+  // 換觀測面時先明確提示怎麼轉身（例如從右側換到背面/左側），畫面大字同步顯示
+  const turn = S.rom.lastView !== m.view ? v(`romTurn_${m.view}`) : '';
+  S.rom.lastView = m.view;
+  speak(`${turn}${full ? `${S.rom.idx + 1}. ${name}。${en ? m.introEn : m.introZh}` : `${name}。`}`, { interrupt: !queue });
+  if (turn) S.rom.phaseStart += 3000;                // 多留 3 秒轉身
+  $('#msg').textContent = `${turn ? `${t('view_' + m.view)}：${turn}\n` : ''}${S.rom.idx + 1}/${S.rom.list.length}  ${name}`;   // 換掉上一個動作留下的口令（例如「回來」）
 }
 function endRomTest(completed) {
   S.mode = 'posture'; setPhase('idle'); $('#romDemo').toggleAttribute('hidden', true); $('#msg').textContent = '';
+  $('.stage').classList.toggle('solo', S.voiceOn);
   if (completed) say('romAllDone');
   if (S.session?.rom && Object.keys(S.session.rom).length) { saveCurrent(true); renderRom(); if (completed) showTab('rom'); }
 }
@@ -525,6 +540,12 @@ function stepRom(now, det, detView, vars) {
       L.cur = m.ref === 'start' ? val - (L.base.length ? avg(L.base) : val) : val;
       if (el >= BASE_SEC) { L.max = Math.max(L.max, L.cur); L.min = Math.min(L.min, L.cur); }
     }
+    // 代償提醒：例如膝屈曲時髖關節跟著屈曲超過門檻 → 念一次「大腿保持垂直」
+    if (m.comp && fin(vars?.[m.comp.name])) {
+      const c = vars[m.comp.name], C = (S.rom.comp ??= { base: [], warned: false });
+      if (el < BASE_SEC) C.base.push(c);
+      else if (!C.warned && C.base.length && c - avg(C.base) > m.comp.warn) { C.warned = true; speak(lang === 'en' ? m.comp.cueEn : m.comp.cueZh, { interrupt: true }); }
+    }
     // 兩個方向都在「達到最大角度」的瞬間拍照（含骨架與角度標示），供事後檢查量測是否合理
     if (el >= BASE_SEC) {
       const seg = m.neg && el >= keys.find(k => k.cue === 'neg').t ? 'neg' : 'pos';
@@ -538,7 +559,7 @@ function stepRom(now, det, detView, vars) {
     if (el >= duration) finishRomRecording();
   } else if (S.phase === 'done') demoT = 0;
   const dv = demoValueAt(m, demoT);
-  romDemo.render(m.view, m.demo(dv), m, `${S.rom.idx + 1}/${S.rom.list.length}  ${romName(m)}`, m.arcs.map(() => dv));
+  romDemo.render(m.view, m.demo(dv), m, `${S.rom.idx + 1}/${S.rom.list.length}  ${romName(m)}`, m.arcs.map(() => dv), !!cfg.mirrorView);
 }
 function romPanel() {
   if (!S.rom) return [];
@@ -557,7 +578,7 @@ function romSnap(key) {
 function startRomRecording(now) {
   crumb('rec_audio');
   if (!cfg.quietRec) beep(1046, 250);
-  S.recFrames = []; S.recStart = now; S.rom.cueIdx = 0; S.rom.live = {}; S.rom.snaps = {}; S.rom.peak = {}; S.rom.wantSnap = null; S.rom.lastSnapT = 0; S.runningMarked = false;
+  S.recFrames = []; S.recStart = now; S.rom.cueIdx = 0; S.rom.live = {}; S.rom.snaps = {}; S.rom.peak = {}; S.rom.comp = null; S.rom.wantSnap = null; S.rom.lastSnapT = 0; S.runningMarked = false;
   S.recorder = new CanvasRecorder(canvas, 30, cfg.videoFmt);
   crumb('rec_recorder', { mime: S.recorder.mime });
   try { S.recorder.start(); } catch (e) { console.warn('recorder', e); S.recorder = null; }
@@ -650,16 +671,16 @@ window.addEventListener('devicemotion', e => {
   if (g && fin(g.x) && fin(g.y)) S.tilt = Math.atan2(g.x, Math.abs(g.y)) * 180 / Math.PI;
 });
 function plumbManual() { S.manualPts = []; toast(t('tapPlumb1')); }
-canvas.addEventListener('click', e => {
+const onPlumbClick = e => {
   if (!S.manualPts) return;
-  const r = canvas.getBoundingClientRect();
-  S.manualPts.push([(e.clientX - r.left) * canvas.width / r.width, (e.clientY - r.top) * canvas.height / r.height]);
+  S.manualPts.push(toCanvasPx(e));
   if (S.manualPts.length === 1) { toast(t('tapPlumb2')); return; }
   let [a, b] = S.manualPts; if (a[1] > b[1]) [a, b] = [b, a];  // a = 上方點
   const dx = a[0] - b[0], dy = a[1] - b[1], n = Math.hypot(dx, dy);
   if (n > 20) { S.up = [dx / n, dy / n]; S.plumbMode = 'manual'; toast(`${t('plumbStatus')}: ${(Math.atan2(S.up[0], -S.up[1]) * 180 / Math.PI).toFixed(2)}°`); }
   S.manualPts = null;
-});
+};
+canvas.addEventListener('click', onPlumbClick); mview.addEventListener('click', onPlumbClick);
 
 // ---------------- UI：狀態列與方向 ----------------
 function renderChips() {
@@ -804,7 +825,14 @@ $('#reportBtn').onclick = async () => {
 };
 
 // ---------------- ROM 分頁 ----------------
+// 新增的動作預設勾選（使用者先前存的勾選清單裡沒有它們）
+function syncRomSel() {
+  const known = cfg.romKnown ?? (cfg.romSel ? MOVES.map(m => m.id).filter(id => cfg.romSel.includes(id) || !['hip_rot_R', 'hip_rot_L', 'R_sh_rot', 'L_sh_rot'].includes(id)) : null);
+  if (cfg.romSel && known) cfg.romSel = [...cfg.romSel, ...MOVES.map(m => m.id).filter(id => !known.includes(id) && !cfg.romSel.includes(id))];
+  cfg.romKnown = MOVES.map(m => m.id); saveCfg();
+}
 function renderRomChecklist() {
+  syncRomSel();
   const sel = cfg.romSel ?? MOVES.map(m => m.id);
   let html = '', lastView = '';
   for (const m of MOVES) {
@@ -834,7 +862,8 @@ function renderRom() {
     const m = MOVES.find(x => x.id === id);
     for (const [vn, mt] of Object.entries(R[id].metrics)) {
       const c = C?.[id]?.metrics?.[vn];
-      rows += `<tr><td>${romName(m)}</td><td>${mt.side ? t(mt.side === 'R' ? 'right' : 'left') : ''}</td><td>${f(mt.start)}</td><td>${en ? m.pos.en : m.pos.zh}</td><td>${f(mt.pos)}</td><td>${m.pos.norm}</td>${pctCell(mt.pctPos)}`
+      const compNote = mt.comp?.warn ? `<br><small class="warn">⚠ ${en ? m.comp.en : m.comp.zh} ${Math.round(mt.comp.deg)}°</small>` : '';
+      rows += `<tr><td>${romName(m)}${compNote}</td><td>${mt.side ? t(mt.side === 'R' ? 'right' : 'left') : ''}</td><td>${f(mt.start)}</td><td>${en ? m.pos.en : m.pos.zh}</td><td>${f(mt.pos)}</td><td>${m.pos.norm}</td>${pctCell(mt.pctPos)}`
         + (m.neg ? `<td>${en ? m.neg.en : m.neg.zh}</td><td>${f(-mt.neg)}</td><td>${m.neg.norm}</td>${pctCell(mt.pctNeg)}` : '<td></td><td></td><td></td><td></td>')
         + `<td>${f(mt.rom)}</td><td>${mt.validPct}</td>${C ? `<td>${f(c?.rom)}</td><td>${fin(c?.rom) ? (mt.rom - c.rom >= 0 ? '+' : '') + (mt.rom - c.rom).toFixed(0) : '–'}</td>` : ''}</tr>`;
     }
@@ -1005,7 +1034,9 @@ function setFloorUI() {
   $('#floorEditBtn').textContent = t(S.floorEdit ? 'btnFloorDone' : 'btnFloorEdit');
   $('#floorEditBtn').classList.toggle('primary', !!S.floorEdit);
   $('#trailBtn').textContent = t(cfg.showTrails ? 'btnTrailOn' : 'btnTrailOff');
-  canvas.classList.toggle('editing', !!S.floorEdit);
+  $('#mirrorBtn').textContent = t(cfg.mirrorView ? 'btnMirrorOn' : 'btnMirrorOff');
+  canvas.classList.toggle('offview', !!cfg.mirrorView); mview.classList.toggle('offview', !cfg.mirrorView);
+  canvas.classList.toggle('editing', !!S.floorEdit); mview.classList.toggle('editing', !!S.floorEdit);
 }
 $('#floorBtn').onclick = () => { cfg.floorOn = !cfg.floorOn; if (!cfg.floorOn) S.floorEdit = false; saveCfg(); setFloorUI(); };
 $('#floorEditBtn').onclick = () => {
@@ -1013,22 +1044,26 @@ $('#floorEditBtn').onclick = () => {
   saveCfg(); setFloorUI(); if (S.floorEdit) toast(t('floorHint'));
 };
 $('#floorResetBtn').onclick = () => { cfg.floor = { ...DEFAULT_FLOOR }; saveCfg(); };
+$('#mirrorBtn').onclick = () => { cfg.mirrorView = !cfg.mirrorView; saveCfg(); setFloorUI(); };
 $('#trailBtn').onclick = () => { cfg.showTrails = !cfg.showTrails; saveCfg(); setFloorUI(); };
-const toCanvasPx = e => { const r = canvas.getBoundingClientRect(); return [(e.clientX - r.left) * canvas.width / r.width, (e.clientY - r.top) * canvas.height / r.height]; };
-canvas.addEventListener('pointerdown', e => {
+const toCanvasPx = e => {
+  const el = e.currentTarget, r = el.getBoundingClientRect(), x = (e.clientX - r.left) * canvas.width / r.width;
+  return [el === mview ? canvas.width - x : x, (e.clientY - r.top) * canvas.height / r.height];
+};
+const onFloorDown = e => {
   if (!S.floorEdit) return;
-  const p = toCanvasPx(e), r = canvas.getBoundingClientRect(), pxPerCss = canvas.width / r.width;
+  const p = toCanvasPx(e), r = e.currentTarget.getBoundingClientRect(), pxPerCss = canvas.width / r.width;
   const hs = floorHandles(cfg.floor, canvas.width, canvas.height, floorK());
   const best = hs.map(h => ({ h, d: Math.hypot(h.at[0] - p[0], h.at[1] - p[1]) / pxPerCss })).sort((a, b) => a.d - b.d)[0];
   if (!best || best.d > 40) return;                 // 40 px（螢幕）內才抓得到
-  S.floorDrag = best.h.id; canvas.setPointerCapture(e.pointerId); e.preventDefault();
-});
-canvas.addEventListener('pointermove', e => {
+  S.floorDrag = best.h.id; e.currentTarget.setPointerCapture(e.pointerId); e.preventDefault();
+};
+const onFloorMove = e => {
   if (!S.floorDrag) return;
   dragFloor(cfg.floor, S.floorDrag, toCanvasPx(e), canvas.width, canvas.height, floorK());
-});
+};
 const endDrag = () => { if (S.floorDrag) { S.floorDrag = null; saveCfg(); } };
-canvas.addEventListener('pointerup', endDrag); canvas.addEventListener('pointercancel', endDrag);
+for (const el of [canvas, mview]) { el.addEventListener('pointerdown', onFloorDown); el.addEventListener('pointermove', onFloorMove); el.addEventListener('pointerup', endDrag); el.addEventListener('pointercancel', endDrag); }
 $('#plumbResetBtn').onclick = () => { S.up = [0, -1]; S.plumbMode = 'none'; };
 function startVoice() {
   return startListening(cmd => { toast(`🎤 ${cmd}`); command(cmd); }, txt => { $('#heard').textContent = t('liveVoiceHeard') + txt; });

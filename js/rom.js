@@ -49,6 +49,21 @@ export const MOVES = [
     introEn: 'You may hold a wall or chair with your right hand. On cue, lift your straight left leg out to the side, keep your trunk upright, then lower it.',
     pos: { to: 40, zh: '外展', en: 'abduction', norm: 45, src: 'AAOS', cueZh: '左腳往左側抬到最高', cueEn: 'Lift your left leg out to the side', sZh: '左腳往旁抬', sEn: 'Left leg out' }, neg: null,
     demo: v => ({ hipAbdL: v }), arcs: [['HL', 'down', 'legL']] },
+  // 坐姿髖內外轉（髖、膝各屈 90°）：正面看小腿以膝為軸左右擺。外轉 = 腳往身體中線
+  { id: 'hip_rot_R', view: 'front', zh: '右髖 外轉／內轉', en: 'Right hip external / internal rotation',
+    vars: [{ name: 'R_shank_seg_deg', side: 'R' }], lm: [23, 24, 25, 26, 27, 28],
+    introZh: '坐在椅子上面向鏡頭，髖和膝都彎 90 度，大腿保持不動。聽口令，右小腿往內側擺（腳往左），回正後往外側擺（腳往右）。',
+    introEn: 'Sit facing the camera, hip and knee at 90°, thigh still. On cue swing the right lower leg inward (foot to the left), back to centre, then outward (foot to the right).',
+    pos: { to: 40, zh: '外轉', en: 'external rot.', norm: 45, src: 'AAOS', cueZh: '右腳往左擺（髖外轉）', cueEn: 'Right foot inward (external rotation)', sZh: '右腳往左擺', sEn: 'Foot in' },
+    neg: { to: -35, zh: '內轉', en: 'internal rot.', norm: 45, src: 'AAOS', cueZh: '右腳往右擺（髖內轉）', cueEn: 'Right foot outward (internal rotation)', sZh: '右腳往右擺', sEn: 'Foot out' },
+    demo: v => ({ hipRotR: v }), arcs: [['KR', 'down', 'shankR']] },
+  { id: 'hip_rot_L', view: 'front', zh: '左髖 外轉／內轉', en: 'Left hip external / internal rotation',
+    vars: [{ name: 'L_shank_seg_deg', side: 'L', sign: -1 }], lm: [23, 24, 25, 26, 27, 28],
+    introZh: '坐在椅子上面向鏡頭，髖和膝都彎 90 度，大腿保持不動。聽口令，左小腿往內側擺（腳往右），回正後往外側擺（腳往左）。',
+    introEn: 'Sit facing the camera, hip and knee at 90°, thigh still. On cue swing the left lower leg inward (foot to the right), back to centre, then outward (foot to the left).',
+    pos: { to: 40, zh: '外轉', en: 'external rot.', norm: 45, src: 'AAOS', cueZh: '左腳往右擺（髖外轉）', cueEn: 'Left foot inward (external rotation)', sZh: '左腳往右擺', sEn: 'Foot in' },
+    neg: { to: -35, zh: '內轉', en: 'internal rot.', norm: 45, src: 'AAOS', cueZh: '左腳往左擺（髖內轉）', cueEn: 'Left foot outward (internal rotation)', sZh: '左腳往左擺', sEn: 'Foot out' },
+    demo: v => ({ hipRotL: v }), arcs: [['KL', 'down', 'shankL']] },
   // ---------- 右側面 ----------
   ...sideMoves('R'),
   { id: 'trunk_flex', view: 'right', zh: '軀幹 前彎／後仰', en: 'Trunk flexion / extension',
@@ -80,6 +95,14 @@ function sideMoves(S) {
       pos: { to: 170, zh: '屈曲', en: 'flexion', norm: 180, src: 'AAOS', cueZh: `${zh}手從前方往上舉到最高`, cueEn: 'Raise your arm forward and up', sZh: '手往前舉高', sEn: 'Arm up' },
       neg: { to: -50, zh: '伸展', en: 'extension', norm: 60, src: 'AAOS', cueZh: `${zh}手往後伸到最遠`, cueEn: 'Reach your arm backward', sZh: '手往後伸', sEn: 'Arm back' },
       demo: v => ({ shFlex: v }), arcs: [['S', 'trunkDown', 'arm']] },
+    // 肩外展 90°、肘屈 90° 下的外轉／內轉：上臂朝向鏡頭，看前臂繞手肘上下轉（前臂朝前水平 = 0°）
+    { id: `${S}_sh_rot`, view, zh: `${zh}肩 外轉／內轉（外展 90°）`, en: `${en} shoulder ER / IR (90° abduction)`,
+      vars: [{ name: `${S}_sh_rot_deg`, side: S }], lm: [L.sh, L.el, L.wr],
+      introZh: `${zh}手往側邊抬到肩膀高度（外展 90 度），手肘彎 90 度，前臂朝前、手掌朝下。聽口令，前臂往上轉到最高（外轉），回來後往下轉（內轉）。上臂和肩膀保持不動。`,
+      introEn: `Raise the ${en.toLowerCase()} arm to the side at shoulder height, elbow bent 90°, forearm pointing forward. On cue rotate the forearm up (external rotation), back, then down (internal rotation). Keep the upper arm still.`,
+      pos: { to: 85, zh: '外轉', en: 'external rot.', norm: 90, src: 'AAOS', cueZh: '前臂往上轉（外轉）', cueEn: 'Rotate the forearm up', sZh: '前臂往上轉', sEn: 'Forearm up' },
+      neg: { to: -65, zh: '內轉', en: 'internal rot.', norm: 70, src: 'AAOS', cueZh: '前臂往下轉（內轉）', cueEn: 'Rotate the forearm down', sZh: '前臂往下轉', sEn: 'Forearm down' },
+      demo: v => ({ shRot: v }), arcs: [['E', 'fwd', 'forearmRot']] },
     { id: `${S}_elbow`, view, zh: `${zh}肘 屈曲`, en: `${en} elbow flexion`,
       vars: [{ name: `${S}_elbow_flex_deg`, side: S }], lm: [L.sh, L.el, L.wr],
       introZh: `${zh}上臂貼住身體，手掌朝前。聽口令，手肘彎曲，手掌盡量靠近肩膀，再伸直。`,
@@ -95,6 +118,7 @@ function sideMoves(S) {
       demo: v => ({ hipFlex: v, kneeFlex: v > 0 ? v * 0.9 : 0 }), arcs: [['Hp', 'down', 'thigh']] },
     { id: `${S}_knee`, view, zh: `${zh}膝 屈曲`, en: `${en} knee flexion`,
       vars: [{ name: `${S}_knee_flex_deg`, side: S }], lm: [L.hip, L.kn, L.an],
+      comp: { name: `${S}_hip_flex_deg`, warn: 15, zh: '髖關節屈曲（股直肌可能緊繃）', en: 'hip flexion (tight rectus femoris?)', cueZh: '大腿保持垂直', cueEn: 'Keep the thigh vertical' },
       introZh: `可以扶牆，大腿保持垂直。聽口令，${zh}腳跟往後往上，盡量靠近臀部，再放下。`,
       introEn: `You may hold a wall; keep the thigh vertical. On cue, bring your ${en.toLowerCase()} heel up toward your buttock, then lower it.`,
       pos: { to: 120, zh: '屈曲', en: 'flexion', norm: 135, src: 'AAOS', cueZh: '腳跟往後往上，靠近臀部', cueEn: 'Heel toward your buttock', sZh: '腳跟靠臀部', sEn: 'Heel up' }, neg: null,
@@ -146,8 +170,8 @@ export function unwrapDeg(a) {
   return out;
 }
 
-/** 起始姿勢角度：開始 ~2 秒內「最穩定」的 0.5 秒（標準差最小）取中位數。受測者聽到口令時晃動也不影響 */
-export function stableStart(f, t, until = BASE_SEC + 0.5, win = 0.5) {
+/** 起始姿勢角度：開始 1.5 秒內「最穩定」的 0.5 秒（標準差最小）取中位數。受測者聽到口令時晃動也不影響 */
+export function stableStart(f, t, until = BASE_SEC, win = 0.5) {
   let best = { sd: Infinity, med: NaN };
   for (let i = 0; i < f.length && t[i] <= until - win; i++) {
     const w = []; for (let j = i; j < f.length && t[j] <= t[i] + win; j++) if (Number.isFinite(f[j])) w.push(f[j]);
@@ -186,6 +210,11 @@ export function analyzeRom(m, frames, ctx) {
       normPos: m.pos.norm, normNeg: m.neg?.norm ?? NaN,
       pctPos: 100 * pos / m.pos.norm, pctNeg: m.neg ? 100 * -neg / m.neg.norm : NaN, validPct: valid,
     };
+    if (m.comp) {
+      const c = unwrapDeg(r.filt[m.comp.name] || []), c0 = stableStart(c, t), i = t.indexOf(st.tmax);
+      const at = Number.isFinite(c[i]) ? c[i] - c0 : NaN;
+      out.metrics[v.name].comp = { deg: at, warn: Number.isFinite(at) && at > m.comp.warn };
+    }
   }
   return out;
 }
@@ -214,5 +243,9 @@ export function asymmetry(romResults) {
   pair('elbow flex', g('R_elbow', 'R_elbow_flex_deg'), g('L_elbow', 'L_elbow_flex_deg'));
   pair('hip flex', g('R_hip_flex', 'R_hip_flex_deg'), g('L_hip_flex', 'L_hip_flex_deg'));
   pair('knee flex', g('R_knee', 'R_knee_flex_deg'), g('L_knee', 'L_knee_flex_deg'));
+  pair('hip ER', g('hip_rot_R', 'R_shank_seg_deg'), g('hip_rot_L', 'L_shank_seg_deg'));
+  pair('hip IR', -g('hip_rot_R', 'R_shank_seg_deg', 'neg'), -g('hip_rot_L', 'L_shank_seg_deg', 'neg'));
+  pair('shoulder ER', g('R_sh_rot', 'R_sh_rot_deg'), g('L_sh_rot', 'L_sh_rot_deg'));
+  pair('shoulder IR', -g('R_sh_rot', 'R_sh_rot_deg', 'neg'), -g('L_sh_rot', 'L_sh_rot_deg', 'neg'));
   return rows;
 }

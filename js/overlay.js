@@ -19,9 +19,22 @@ function line(ctx, a, b, color, w = 2, dash = null) {
   ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = w; if (dash) ctx.setLineDash(dash);
   ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); ctx.restore();
 }
+// 文字最後才畫（flushText）：鏡像顯示時，圖形整張翻轉，但文字要在翻轉後的位置「正著」畫，才讀得懂；
+// 錄影/快照用的主畫布則照常畫，不受鏡像影響。
+const textQ = [];
+export function queueText(op) { textQ.push(op); }   // op: { txt, x, y, font, fill, stroke, lw, align }
+export function flushText(targets) {
+  for (const { ctx, mirrorW } of targets) for (const o of textQ) {
+    const x = mirrorW ? mirrorW - o.x : o.x;
+    const align = mirrorW ? ({ left: 'right', right: 'left' }[o.align || 'left'] || 'center') : (o.align || 'left');
+    ctx.save(); ctx.font = o.font; ctx.textAlign = align;
+    if (o.stroke) { ctx.lineWidth = o.lw || 3; ctx.strokeStyle = o.stroke; ctx.strokeText(o.txt, x, o.y); }
+    ctx.fillStyle = o.fill || '#fff'; ctx.fillText(o.txt, x, o.y); ctx.restore();
+  }
+  textQ.length = 0;
+}
 function label(ctx, txt, x, y, color = '#fff', size = 14) {
-  ctx.save(); ctx.font = `600 ${size}px system-ui, sans-serif`; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.75)';
-  ctx.strokeText(txt, x, y); ctx.fillStyle = color; ctx.fillText(txt, x, y); ctx.restore();
+  queueText({ txt, x, y, font: `600 ${size}px system-ui, sans-serif`, fill: color, stroke: 'rgba(0,0,0,.75)', lw: 3 });
 }
 function arrow(ctx, from, to, color, w = 3) {
   const ang = Math.atan2(to[1] - from[1], to[0] - from[0]), h = 10;
@@ -104,18 +117,15 @@ export function drawOverlay(ctx, o) {
   // 即時數值面板
   if (o.panel?.length) {
     const fs = 13 * k, lh = fs * 1.35, w = 230 * k, h = lh * o.panel.length + 10 * k;
-    ctx.save(); ctx.fillStyle = 'rgba(15,23,42,.72)'; ctx.fillRect(8 * k, 8 * k, w, h);
-    ctx.font = `500 ${fs}px ui-monospace, monospace`;
+    ctx.save(); ctx.fillStyle = 'rgba(15,23,42,.72)'; ctx.fillRect(8 * k, 8 * k, w, h); ctx.restore();
+    const font = `500 ${fs}px ui-monospace, "Noto Sans TC", monospace`;
     o.panel.forEach(([kk, vv], i) => {
-      ctx.fillStyle = '#cbd5e1'; ctx.fillText(kk, 14 * k, 8 * k + lh * (i + 1));
-      ctx.fillStyle = '#fff'; ctx.textAlign = 'right'; ctx.fillText(vv, 8 * k + w - 8 * k, 8 * k + lh * (i + 1)); ctx.textAlign = 'left';
+      queueText({ txt: kk, x: 14 * k, y: 8 * k + lh * (i + 1), font, fill: '#cbd5e1' });
+      queueText({ txt: vv, x: 8 * k + w - 8 * k, y: 8 * k + lh * (i + 1), font, fill: '#fff', align: 'right' });
     });
-    ctx.restore();
   }
   if (o.banner) {
     const fs = 42 * k;
-    ctx.save(); ctx.font = `800 ${fs}px system-ui`; ctx.textAlign = 'center';
-    ctx.lineWidth = 6 * k; ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.strokeText(o.banner, W / 2, H * 0.14);
-    ctx.fillStyle = '#fff'; ctx.fillText(o.banner, W / 2, H * 0.14); ctx.restore();
+    queueText({ txt: o.banner, x: W / 2, y: H * 0.14, font: `800 ${fs}px system-ui`, fill: '#fff', stroke: 'rgba(0,0,0,.6)', lw: 6 * k, align: 'center' });
   }
 }

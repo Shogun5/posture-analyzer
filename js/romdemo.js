@@ -25,8 +25,9 @@ export function createDemo(svg) {
   const poly = pts => pts.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(' ');
 
   /** view: front/back/right/left；p: 關節角度參數；move: 動作（arcs、hot 段）；text: 標題 */
-  function render(view, p, move, text, values = []) {
-    const sx = view === 'left' ? -1 : 1;   // 左側面：水平鏡射
+  function render(view, p, move, text, values = [], mirror = false) {
+    // 左側面：水平鏡射；鏡像顯示（像照鏡子）時整個人形再翻一次，與鏡像後的相機畫面一致
+    const sx = (view === 'left' ? -1 : 1) * (mirror ? -1 : 1);
     const X = q => [100 + (q[0] - 100) * sx, q[1]];
     const P = [100, 150];
     let pts, dirs, segs, farSegs = [], hotSegs = [];
@@ -42,16 +43,22 @@ export function createDemo(svg) {
       const ER = add(SR, aR, 34), WR = add(ER, aR, 30), EL = add(SL, aL, 34), WL = add(EL, aL, 30);
       const HR = [P[0] - 14, P[1]], HL = [P[0] + 14, P[1]];
       const lR = [-Math.sin((p.hipAbdR || 0) * R), Math.cos((p.hipAbdR || 0) * R)], lL = [Math.sin((p.hipAbdL || 0) * R), Math.cos((p.hipAbdL || 0) * R)];
-      const KR = add(HR, lR, 40), AR = add(KR, lR, 40), KL = add(HL, lL, 40), AL = add(HL, lL, 80);
+      let KR = add(HR, lR, 40), AR = add(KR, lR, 40), KL = add(HL, lL, 40), AL = add(HL, lL, 80);
+      // 坐姿髖旋轉：大腿朝向鏡頭（畫短），小腿由膝往下；外轉 = 腳往身體中線（正面圖：右腳往畫面右）
+      const seated = 'hipRotR' in p || 'hipRotL' in p;
+      const sR = [Math.sin((p.hipRotR || 0) * R), Math.cos((p.hipRotR || 0) * R)], sL = [-Math.sin((p.hipRotL || 0) * R), Math.cos((p.hipRotL || 0) * R)];
+      if (seated) { KR = add(HR, [-0.3, 0.95], 14); KL = add(HL, [0.3, 0.95], 14); AR = add(KR, sR, 44); AL = add(KL, sL, 44); }
       pts = { P, N, H, SR, SL, HR, HL };
-      dirs = { up: [0, -1], down: [0, 1], trunkUp: up, trunkDown: [-up[0], -up[1]], head: hdir, armR: aR, armL: aL, legR: lR, legL: lL };
+      pts.KR = KR; pts.KL = KL;
+      dirs = { up: [0, -1], down: [0, 1], trunkUp: up, trunkDown: [-up[0], -up[1]], head: hdir, armR: aR, armL: aL, legR: lR, legL: lL, shankR: sR, shankL: sL };
       segs = [[P, N], [SR, SL], [SR, ER, WR], [SL, EL, WL], [HR, HL], [HR, KR, AR, add(AR, [-8, 0])], [HL, KL, AL, add(AL, [8, 0])]];
-      const hotMap = { shAbdR: [[SR, ER, WR]], shAbdL: [[SL, EL, WL]], hipAbdR: [[HR, KR, AR]], hipAbdL: [[HL, KL, AL]], trunkLat: [[P, N]], neckLat: [] };
+      if (seated) segs = segs.slice(0, 5).concat([[HR, KR, AR, add(AR, [-8, 0])], [HL, KL, AL, add(AL, [8, 0])]]);
+      const hotMap = { shAbdR: [[SR, ER, WR]], shAbdL: [[SL, EL, WL]], hipAbdR: [[HR, KR, AR]], hipAbdL: [[HL, KL, AL]], trunkLat: [[P, N]], neckLat: [], hipRotR: [[KR, AR]], hipRotL: [[KL, AL]] };
       for (const k of Object.keys(move?.demo?.(1) || {})) hotSegs.push(...(hotMap[k] || []));
-      head.setAttribute('cx', H[0]); head.setAttribute('cy', H[1]);
+      const hc = X(H); head.setAttribute('cx', hc[0]); head.setAttribute('cy', hc[1]);
       // 正面畫眼睛；背面不畫臉
-      nose.setAttribute('d', view === 'front' ? `M${H[0] - 5} ${H[1] - 2} h0.1 M${H[0] + 5} ${H[1] - 2} h0.1` : '');
-      sideTag.textContent = view === 'front' ? '← R   L →' : '← L   R →';
+      nose.setAttribute('d', view === 'front' ? `M${hc[0] - 5} ${hc[1] - 2} h0.1 M${hc[0] + 5} ${hc[1] - 2} h0.1` : '');
+      sideTag.textContent = (view === 'front') !== mirror ? '← R   L →' : '← L   R →';
     } else {
       const f = p.trunkFlex || 0;
       const up = vec(180 - f), down = vec(-f);
@@ -59,22 +66,24 @@ export function createDemo(svg) {
       const hdirDeg = 180 - f - (p.neckFlex || 0), hdir = vec(hdirDeg);
       const H = add(N, hdir, 20);
       const ua = vec(-f + (p.shFlex || 0)), fa = vec(-f + (p.shFlex || 0) + (p.elbowFlex || 0));
-      const E = add(S, ua, 34), W = add(E, fa, 30);
+      let E = add(S, ua, 34), W = add(E, fa, 30);
+      const shRot = 'shRot' in p, rf = vec(90 + (p.shRot || 0));   // 0° = 前臂朝前水平；外轉往上、內轉往下
+      if (shRot) { E = add(S, [6, 3], 1); W = add(E, rf, 34); }
       const th = vec(p.hipFlex || 0), sh = vec((p.hipFlex || 0) - (p.kneeFlex || 0)), ft = vec((p.hipFlex || 0) - (p.kneeFlex || 0) + 90);
       const Hp = P, K = add(Hp, th, 40), A = add(K, sh, 40), T = add(A, ft, 16);
       // 遠側（不動）肢體
       farSegs = [[S, add(S, down, 34), add(add(S, down, 34), down, 30)], [Hp, add(Hp, [0, 1], 40), add(Hp, [0, 1], 80), add(add(Hp, [0, 1], 80), [16, 0])]];
       pts = { P, N, H, S, E, Hp, K };
-      dirs = { up: [0, -1], down: [0, 1], trunkUp: up, trunkDown: down, head: hdir, arm: ua, forearm: fa, thigh: th, shank: sh };
+      dirs = { up: [0, -1], down: [0, 1], trunkUp: up, trunkDown: down, head: hdir, arm: ua, forearm: fa, thigh: th, shank: sh, fwd: [1, 0], forearmRot: rf };
       segs = [[P, N], [S, E, W], [Hp, K, A, T]];
-      const hotMap = { shFlex: [[S, E, W]], elbowFlex: [[E, W]], hipFlex: [[Hp, K]], kneeFlex: [[K, A, T]], trunkFlex: [[P, N]], neckFlex: [] };
+      const hotMap = { shFlex: [[S, E, W]], elbowFlex: [[E, W]], hipFlex: [[Hp, K]], kneeFlex: [[K, A, T]], trunkFlex: [[P, N]], neckFlex: [], shRot: [[S, E, W]] };
       for (const k of Object.keys(move?.demo?.(1) || {})) hotSegs.push(...(hotMap[k] || []));
       const hc = X(H); head.setAttribute('cx', hc[0]); head.setAttribute('cy', hc[1]);
       const fwd = vec(hdirDeg - 90);  // 臉的方向（垂直於頭軸、朝前）
       const n1 = X(add(H, fwd, 9)), n2 = X(add(H, fwd, 15));
       nose.setAttribute('d', `M${n1[0]} ${n1[1]} L${n2[0]} ${n2[1]}`);
       nose.setAttribute('stroke', '#fff'); nose.setAttribute('stroke-width', 5);
-      sideTag.textContent = view === 'right' ? 'R →' : '← L';
+      sideTag.textContent = (sx > 0) ? `${view === 'right' ? 'R' : 'L'} →` : `← ${view === 'right' ? 'R' : 'L'}`;
     }
     if (view === 'front' || view === 'back') { nose.setAttribute('stroke', '#0a1a33'); nose.setAttribute('stroke-width', 3.5); }
     const tr = segsArr => segsArr.map(s => poly(s.map(X))).join(' ');
