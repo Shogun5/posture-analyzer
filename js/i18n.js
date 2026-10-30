@@ -3,7 +3,7 @@ export const STR = {
   zh: {
     appTitle: '人體姿勢分析器',
     tabCapture: '拍攝', tabResults: '結果', tabHistory: '歷史', tabSettings: '設定',
-    btnCamera: '開啟相機', btnCameraOff: '■ 關閉相機', btnFlip: '🔄 切換鏡頭', btnFloorOff: '井字框：關', btnFloorOn: '井字框：開', btnFloorEdit: '調整井字框', btnFloorDone: '✓ 完成調整', btnFloorReset: '重設井字框',
+    btnCamera: '開啟相機', btnCameraOff: '■ 關閉相機', btnFlip: '🔄 切換鏡頭', processing: '分析中…', btnFloorOff: '井字框：關', btnFloorOn: '井字框：開', btnFloorEdit: '調整井字框', btnFloorDone: '✓ 完成調整', btnFloorReset: '重設井字框',
     floorHint: '拖框外的小黃點：「下底」左右拉調寬度、上下拉調位置；「高」調紙的深度；「角度」調兩側斜邊。框永遠左右置中。', floorBase: '下底', floorHeight: '高', floorAngle: '角度', btnTrailOff: '軌跡：關', btnTrailOn: '軌跡：開', camAuto: '自動（前/後鏡頭）', camBusy: '鏡頭無法啟動：可能正被其他程式使用（Teams、Zoom、LINE、Windows 相機等），請關閉後再按「開啟相機」；或拔插 USB 鏡頭再試。', camMissing: '找不到選定的鏡頭（可能已拔除），改用前/後鏡頭', btnStartSession: '開始引導拍攝', btnCaptureNow: '立即拍攝',
     btnNext: '下一個方向', btnRetake: '重拍', btnStop: '停止',
     btnPlumbSensor: '感測器鉛垂', btnPlumbManual: '手動鉛垂(點2點)', btnPlumbReset: '取消鉛垂',
@@ -69,7 +69,7 @@ export const STR = {
   en: {
     appTitle: 'Posture Analyzer',
     tabCapture: 'Capture', tabResults: 'Results', tabHistory: 'History', tabSettings: 'Settings',
-    btnCamera: 'Start camera', btnCameraOff: '■ Stop camera', btnFlip: '🔄 Switch camera', btnFloorOff: 'Floor grid: OFF', btnFloorOn: 'Floor grid: ON', btnFloorEdit: 'Adjust grid', btnFloorDone: '✓ Done', btnFloorReset: 'Reset grid',
+    btnCamera: 'Start camera', btnCameraOff: '■ Stop camera', btnFlip: '🔄 Switch camera', processing: 'Analysing…', btnFloorOff: 'Floor grid: OFF', btnFloorOn: 'Floor grid: ON', btnFloorEdit: 'Adjust grid', btnFloorDone: '✓ Done', btnFloorReset: 'Reset grid',
     floorHint: 'Drag the small yellow dots outside the frame: Base (left/right = width, up/down = position), Height (depth of the sheet), Angle (side slope). The frame stays centred.', floorBase: 'Base', floorHeight: 'Height', floorAngle: 'Angle', btnTrailOff: 'Trails: OFF', btnTrailOn: 'Trails: ON', camAuto: 'Auto (front/rear)', camBusy: 'Camera could not start: it may be in use by another app (Teams, Zoom, Windows Camera…). Close it and press Start camera, or re-plug the USB camera.', camMissing: 'Selected camera not found (unplugged?) — using front/rear', btnStartSession: 'Start guided session', btnCaptureNow: 'Capture now',
     btnNext: 'Next view', btnRetake: 'Retake', btnStop: 'Stop',
     btnPlumbSensor: 'Sensor plumb', btnPlumbManual: 'Manual plumb (tap 2)', btnPlumbReset: 'Clear plumb',

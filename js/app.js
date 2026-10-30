@@ -17,7 +17,7 @@ import { loadModule, wrapModule } from './ectmodule.js';
 import { renderPhoto, composeBoard, meanSDTable, varLabel } from './posturecard.js';
 import { DEFAULT_FLOOR, drawFloorGuide, floorHandles, dragFloor } from './floorguide.js';
 
-export const APP_VERSION = '1.6.3'; // 與 sw.js 的 CACHE 版本一起更新
+export const APP_VERSION = '1.6.4'; // 與 sw.js 的 CACHE 版本一起更新
 
 const $ = s => document.querySelector(s);
 const fin = Number.isFinite;
@@ -469,6 +469,7 @@ function enterRomIntro(queue = false) {
   const full = getVoiceLevel() === 'full', en = getLang() === 'en';
   const name = romName(m).replace(/（.*?）|\(.*?\)/g, '').replace(/[／/]/g, en ? ' and ' : '、');
   speak(full ? `${S.rom.idx + 1}. ${name}。${en ? m.introEn : m.introZh}` : `${name}。`, { interrupt: !queue });
+  $('#msg').textContent = `${S.rom.idx + 1}/${S.rom.list.length}  ${name}`;   // 換掉上一個動作留下的口令（例如「回來」）
 }
 function endRomTest(completed) {
   S.mode = 'posture'; setPhase('idle'); $('#romDemo').toggleAttribute('hidden', true); $('#msg').textContent = '';
@@ -491,7 +492,9 @@ function stepRom(now, det, detView, vars) {
   const m = romMove(), lang = getLang(), { keys, duration } = timeline(m);
   let demoT = ((now - S.rom.phaseStart) / 1000) % duration;   // intro/align：示範動畫循環播放
   if (S.phase === 'intro') {
-    if (now - S.rom.phaseStart > 2500 && !isSpeaking()) { setPhase('align'); S.okSince = 0; S.lastCue = now; }
+    // 等說明念完再對位；語音卡住時最多等 15 秒，流程不會停住
+    const waited = now - S.rom.phaseStart;
+    if ((waited > 2500 && !isSpeaking()) || waited > 15000) { setPhase('align'); S.okSince = 0; S.lastCue = now; }
   } else if (S.phase === 'align') {
     const cue = romAlignCue(det, detView, m);
     $('#msg').textContent = cue ? v(cue) : '✓';
@@ -562,6 +565,7 @@ function startRomRecording(now) {
 }
 async function finishRomRecording() {
   setPhase('done');
+  $('#msg').textContent = t('processing');
   const m = romMove();
   let clip = null;
   try { clip = await S.recorder?.stop(); } catch (e) { console.warn(e); }
@@ -578,6 +582,7 @@ async function finishRomRecording() {
         return `${side} ${p} ${fin(mt.pos) ? Math.round(mt.pos) : '-'} ${v('deg')}${m.neg ? `，${n} ${fin(mt.neg) ? Math.round(-mt.neg) : '-'} ${v('deg')}` : ''}`;
       });
       speak(parts.join('；'), { interrupt: true });
+      $('#msg').textContent = parts.join('；').trim();
       renderRom();
     } catch (e) { console.error(e); toast(`ROM error: ${e.message}`); }
   } else toast('Too few frames');

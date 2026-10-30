@@ -31,11 +31,15 @@ export class CanvasRecorder {
   stop() {
     return new Promise(res => {
       if (!this.rec || this.rec.state === 'inactive') return res(null);
-      this.rec.onstop = () => {
+      const done = () => {
+        clearTimeout(timer);
         const type = this.rec.mimeType || this.mime || 'video/webm';
-        res({ blob: new Blob(this.chunks, { type }), ext: type.includes('mp4') ? 'mp4' : 'webm' });
+        res(this.chunks.length ? { blob: new Blob(this.chunks, { type }), ext: type.includes('mp4') ? 'mp4' : 'webm' } : null);
       };
-      this.rec.stop();
+      // 保險：onstop 沒觸發時 3 秒後用已收到的片段結束，流程不會卡住
+      const timer = setTimeout(done, 3000);
+      this.rec.onstop = done;
+      try { this.rec.stop(); } catch { done(); }
     });
   }
 }

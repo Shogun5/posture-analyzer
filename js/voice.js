@@ -21,6 +21,11 @@ function pickVoice(lang) {
   return null;
 }
 
+// Chrome 的語音合成偶爾會「卡住」：speaking 一直是 true、後面的句子都不念（流程若等它念完就會停住）。
+// 對策：依字數估計每句應念完的時間；超過就視為沒在說話，並由看門狗清掉卡住的佇列。
+let speakingUntil = 0;
+const estMs = text => 1500 + text.length * (getLang() === 'zh' ? 300 : 75);
+
 /** 說話；interrupt=true 會打斷目前語音。相同句子 minGapMs 內不重複 */
 export function speak(text, { interrupt = false, minGapMs = 0, rate = 1 } = {}) {
   if (!('speechSynthesis' in window) || !text) return;
@@ -28,14 +33,23 @@ export function speak(text, { interrupt = false, minGapMs = 0, rate = 1 } = {}) 
   if (text === lastSpoken && now - lastTime < minGapMs) return;
   lastSpoken = text; lastTime = now;
   if (interrupt) speechSynthesis.cancel();
+  speechSynthesis.resume();                       // Chrome：cancel 後有時停在暫停狀態
   const u = new SpeechSynthesisUtterance(text);
   const lang = getLang();
   u.lang = lang === 'zh' ? 'zh-TW' : 'en-US';
   const v = pickVoice(lang); if (v) u.voice = v;
   u.rate = rate;
+  u.onend = u.onerror = () => { if (!speechSynthesis.pending) speakingUntil = 0; };
+  speakingUntil = Math.max(interrupt ? 0 : speakingUntil, now) + estMs(text) / rate;
   speechSynthesis.speak(u);
 }
-export const isSpeaking = () => 'speechSynthesis' in window && speechSynthesis.speaking;
+export const isSpeaking = () => 'speechSynthesis' in window && speechSynthesis.speaking && performance.now() < speakingUntil;
+// 看門狗：念太久（超過估計時間 4 秒）→ 清掉；長句時定期 pause/resume，避免 Chrome 念到一半停住
+if ('speechSynthesis' in window) setInterval(() => {
+  if (!speechSynthesis.speaking) return;
+  if (performance.now() > speakingUntil + 4000) { speechSynthesis.cancel(); speakingUntil = 0; return; }
+  speechSynthesis.pause(); speechSynthesis.resume();
+}, 5000);
 
 /** 提示音（倒數嗶聲） */
 export function beep(freq = 880, ms = 150, vol = 0.3) {
