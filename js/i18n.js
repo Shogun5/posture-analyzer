@@ -2,6 +2,7 @@
 export const STR = {
   zh: {
     appTitle: '人體姿勢分析器',
+    readRef: '講義', refNotFound: '講義中找不到這一頁', capsularHint: '多個關節同時受限時，可參考關節囊受限模式：',
     stepSubject: '① 受測者', stepItems: '② 測試項目', stepSetup: '③ 環境設定', stepTest: '④ 進行測試', stepResults: '⑤ 結果', stepRef: '⑥ 參考資料',
     subjSearch: '搜尋姓名或編號', newSubject: '＋ 新增受測者', editSubject: '編輯受測者', subjId: '編號 *', subjName: '姓名', subjSex: '性別', sexM: '男', sexF: '女', sexO: '其他',
     subjBirth: '出生日期', subjDominant: '慣用側', domR: '右', domL: '左', subjNotes: '備註（運動項目、傷病史等）', saveSubject: '儲存並選擇', cancel: '取消',
@@ -76,6 +77,7 @@ export const STR = {
   },
   en: {
     appTitle: 'Posture Analyzer',
+    readRef: 'Notes', refNotFound: 'Page not found in the module', capsularHint: 'Several joints limited — see capsular patterns: ',
     stepSubject: '① Subject', stepItems: '② Tests', stepSetup: '③ Setup', stepTest: '④ Run test', stepResults: '⑤ Results', stepRef: '⑥ Reference',
     subjSearch: 'Search name or ID', newSubject: '+ New subject', editSubject: 'Edit subject', subjId: 'ID *', subjName: 'Name', subjSex: 'Sex', sexM: 'Male', sexF: 'Female', sexO: 'Other',
     subjBirth: 'Date of birth', subjDominant: 'Dominant side', domR: 'Right', domL: 'Left', subjNotes: 'Notes (sport, injury history…)', saveSubject: 'Save & select', cancel: 'Cancel',

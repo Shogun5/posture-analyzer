@@ -150,3 +150,8 @@ button.big { font-size: 17px; padding: 12px 18px; min-height: 48px; }
 
 /* hidden 屬性一律隱藏（.form 等有 display:grid 會蓋過瀏覽器預設） */
 [hidden] { display: none !important; }
+
+/* 結果 → 講義按鈕 */
+.reflink { display: inline-block; margin: 4px 0 0; min-height: 30px; padding: 3px 10px; font-size: 13px; border-radius: 999px; border-color: var(--accent); color: var(--accent); background: transparent; }
+.flag .reflink { display: block; width: fit-content; margin-top: 6px; }
+td .reflink { display: block; width: fit-content; }

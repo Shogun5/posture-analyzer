@@ -15,9 +15,10 @@ import { createDemo } from './romdemo.js';
 import { requireAuth, signOut, useRedirectMode, redirectMode } from './auth.js';
 import { loadModule, wrapModule } from './ectmodule.js';
 import { renderPhoto, composeBoard, meanSDTable, varLabel } from './posturecard.js';
+import { refForFlag, refForMove, refForAsym, CAPSULAR } from './reflinks.js';
 import { DEFAULT_FLOOR, drawFloorGuide, floorHandles, dragFloor } from './floorguide.js';
 
-export const APP_VERSION = '1.8.0'; // 與 sw.js 的 CACHE 版本一起更新
+export const APP_VERSION = '1.8.1'; // 與 sw.js 的 CACHE 版本一起更新
 
 const $ = s => document.querySelector(s);
 const fin = Number.isFinite;
@@ -744,7 +745,7 @@ async function renderBoard(s) {
     const flags = V.flags || [];
     const fl = flags.filter(f => f.sev !== 'info'), info = flags.filter(f => f.sev === 'info');
     const tip = f => (lang === 'en' ? f.tipEn : f.tipZh);
-    const flagHtml = (fl.length ? fl.map(f => `<div class="flag ${f.sev}"><b>${lang === 'en' ? f.en : f.zh}</b>${fin(f.value) ? `${t('value')} ${Math.abs(f.value).toFixed(1)} ${f.unit}（${t('threshold')} ${Math.abs(f.thr)}）· ${t(f.sev)} · ` : ''}${t('slides')} ${f.slides}${tip(f) ? `<br><small>${tip(f)}</small>` : ''}</div>`).join('') : `<p>${t('noFlags')}</p>`)
+    const flagHtml = (fl.length ? fl.map(f => `<div class="flag ${f.sev}"><b>${lang === 'en' ? f.en : f.zh}</b>${fin(f.value) ? `${t('value')} ${Math.abs(f.value).toFixed(1)} ${f.unit}（${t('threshold')} ${Math.abs(f.thr)}）· ${t(f.sev)} · ` : ''}${t('slides')} ${f.slides}${tip(f) ? `<br><small>${tip(f)}</small>` : ''}${refBtn(refForFlag(f.id))}</div>`).join('') : `<p>${t('noFlags')}</p>`)
       + info.map(f => `<div class="flag info">${lang === 'en' ? f.en : f.zh}</div>`).join('');
     const img = V.photo ? `<img data-view="${vw}" alt="${t('view_' + vw)}">` : V.snapshot ? `<img src="${V.snapshot}" alt="${t('view_' + vw)}">` : `<div class="empty">${t('noPhoto')}</div>`;
     return `<div class="pcard"><h3>${t('view_' + vw)}</h3>${img}<h4>${t('flags')}</h4>${flagHtml}<h4>${t('postureTable')}</h4><div class="scroll">${meanSDTable(V.result, vw, flags, S.baseline?.views?.[vw] ?? null)}</div></div>`;
@@ -859,20 +860,23 @@ function renderRom() {
   const pctCell = p => `<td class="${fin(p) && p < 75 ? 'low' : fin(p) && p < 90 ? 'warn' : ''}">${fin(p) ? p.toFixed(0) + '%' : '–'}</td>`;
   const en = getLang() === 'en';
   const head = `<tr><th>${t('romMove')}</th><th>${t('side')}</th><th>${t('romStart')}</th><th>${t('direction')}</th><th>${t('peak')}</th><th>${t('norm')}</th><th>${t('pctNorm')}</th><th>${t('direction')}</th><th>${t('peak')}</th><th>${t('norm')}</th><th>${t('pctNorm')}</th><th>${t('romTotal')}</th><th>${t('validPct')}</th>${C ? `<th>${t('preRom')}</th><th>Δ</th>` : ''}</tr>`;
+  let nLimited = 0;
   let rows = '';
   for (const id of ids) {
     const m = MOVES.find(x => x.id === id);
     for (const [vn, mt] of Object.entries(R[id].metrics)) {
       const c = C?.[id]?.metrics?.[vn];
       const compNote = mt.comp?.warn ? `<br><small class="warn">⚠ ${en ? m.comp.en : m.comp.zh} ${Math.round(mt.comp.deg)}°</small>` : '';
-      rows += `<tr><td>${romName(m)}${compNote}</td><td>${mt.side ? t(mt.side === 'R' ? 'right' : 'left') : ''}</td><td>${f(mt.start)}</td><td>${en ? m.pos.en : m.pos.zh}</td><td>${f(mt.pos)}</td><td>${m.pos.norm}</td>${pctCell(mt.pctPos)}`
+      const limited = [mt.pctPos, mt.pctNeg].some(p => fin(p) && p < 90) || mt.comp?.warn;
+      if (limited) nLimited++;
+      rows += `<tr><td>${romName(m)}${compNote}${limited ? refBtn(refForMove(id)) : ''}</td><td>${mt.side ? t(mt.side === 'R' ? 'right' : 'left') : ''}</td><td>${f(mt.start)}</td><td>${en ? m.pos.en : m.pos.zh}</td><td>${f(mt.pos)}</td><td>${m.pos.norm}</td>${pctCell(mt.pctPos)}`
         + (m.neg ? `<td>${en ? m.neg.en : m.neg.zh}</td><td>${f(-mt.neg)}</td><td>${m.neg.norm}</td>${pctCell(mt.pctNeg)}` : '<td></td><td></td><td></td><td></td>')
         + `<td>${f(mt.rom)}</td><td>${mt.validPct}</td>${C ? `<td>${f(c?.rom)}</td><td>${fin(c?.rom) ? (mt.rom - c.rom >= 0 ? '+' : '') + (mt.rom - c.rom).toFixed(0) : '–'}</td>` : ''}</tr>`;
     }
   }
-  $('#romTable').innerHTML = `<table class="tbl">${head}${rows}</table><p class="hint">${t('romRefNote')}</p>`;
+  $('#romTable').innerHTML = `<table class="tbl">${head}${rows}</table>${nLimited >= 2 ? `<p class="hint">${t('capsularHint')}${refBtn(CAPSULAR)}</p>` : ''}<p class="hint">${t('romRefNote')}</p>`;
   const asym = asymmetry(R);
-  $('#romAsym').innerHTML = asym.length ? `<table class="tbl"><tr><th>${t('romMove')}</th><th>${t('right')}</th><th>${t('left')}</th><th>${t('asymPct')}</th></tr>${asym.map(a => `<tr><td>${a.label}</td><td>${f(a.R)}</td><td>${f(a.L)}</td><td class="${a.asymPct > 15 ? 'low' : a.asymPct > 10 ? 'warn' : ''}">${a.asymPct.toFixed(0)}%</td></tr>`).join('')}</table>` : '';
+  $('#romAsym').innerHTML = asym.length ? `<table class="tbl"><tr><th>${t('romMove')}</th><th>${t('right')}</th><th>${t('left')}</th><th>${t('asymPct')}</th></tr>${asym.map(a => `<tr><td>${a.label}${a.asymPct > 15 ? refBtn(refForAsym(a.label)) : ''}</td><td>${f(a.R)}</td><td>${f(a.L)}</td><td class="${a.asymPct > 15 ? 'low' : a.asymPct > 10 ? 'warn' : ''}">${a.asymPct.toFixed(0)}%</td></tr>`).join('')}</table>` : '';
   const prev = $('#romSel').value;
   $('#romSel').innerHTML = ids.map(id => `<option value="${id}" ${id === prev ? 'selected' : ''}>${romName(MOVES.find(x => x.id === id))}</option>`).join('');
   $('#romSnaps').innerHTML = ids.flatMap(id => ['pos', 'neg'].filter(k => R[id].snapshots?.[k]).map(k => {
@@ -917,6 +921,22 @@ async function loadEct() {
   }
 }
 $('#ectReload').onclick = () => { S.ectLoaded = false; loadEct(); };
+
+// ---------------- 結果 → 講義（⑥ 參考資料）對應頁面 ----------------
+const refBtn = title => (title ? `<button type="button" class="reflink" data-ref="${escA(title)}">📖 ${t('readRef')}：${escA(title)}</button>` : '');
+async function openRef(title) {
+  showTab('ref');
+  if (!S.ectLoaded) await loadEct();
+  const fr = $('#ectFrame');
+  for (let i = 0; i < 40; i++) {            // 最多等 8 秒（模組第一次下載）
+    const doc = fr.contentDocument;
+    const chip = doc && [...doc.querySelectorAll('#rail .chip')].find(b => b.textContent.replace(/^\d+/, '').trim() === title);
+    if (chip) { chip.click(); fr.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+    await new Promise(r => setTimeout(r, 200));
+  }
+  toast(`${t('refNotFound')}：${title}`);
+}
+document.addEventListener('click', e => { const b = e.target.closest('.reflink'); if (b) { e.preventDefault(); openRef(b.dataset.ref); } });
 
 // ---------------- 歷史 ----------------
 async function renderHistory() {
