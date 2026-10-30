@@ -19,7 +19,7 @@ import { refForFlag, refForMove, refForAsym, CAPSULAR } from './reflinks.js';
 import { initFeedback, initErrorReporting } from './feedback.js';
 import { DEFAULT_FLOOR, drawFloorGuide, floorHandles, dragFloor } from './floorguide.js';
 
-export const APP_VERSION = '1.9.0'; // 與 sw.js 的 CACHE 版本一起更新
+export const APP_VERSION = '1.9.1'; // 與 sw.js 的 CACHE 版本一起更新
 
 const $ = s => document.querySelector(s);
 const fin = Number.isFinite;
@@ -891,7 +891,7 @@ function renderRom() {
 }
 function drawRomChart() {
   const R = S.viewSession?.rom, id = $('#romSel').value; if (!R?.[id]) return;
-  const en = getLang() === 'en', sideName = vn => (/^R_/.test(vn) ? t('right') : /^L_/.test(vn) ? t('left') : '');
+  const res = R[id], en = getLang() === 'en', sideName = vn => (/^R_/.test(vn) ? t('right') : /^L_/.test(vn) ? t('left') : '');
   const unit = res.ref === 'start' ? (en ? 'angle vs start (°)' : '相對起始角度 (°)') : (en ? 'angle vs plumb / neutral (°)' : '角度（相對鉛垂／中立位）(°)');
   const series = Object.entries(res.series).map(([vn, y]) => ({ label: `${sideName(vn)}${en ? ' angle' : '角度'}`, t: res.t, y }));
   const c = S.compare?.rom?.[id];
@@ -899,6 +899,8 @@ function drawRomChart() {
   timeSeries($('#romChart'), series, unit);
 }
 $('#romSel').addEventListener('change', drawRomChart);
+// 「進階」曲線收合時畫布寬度為 0，展開時重畫一次
+for (const d of document.querySelectorAll('details.adv')) d.addEventListener('toggle', () => { if (d.open) (d.closest('#res-arom') ? drawRomChart : drawChart)(); });
 $('#romCsvBtn').onclick = () => (S.viewSession ? downloadCSV(S.viewSession, cfg.rawLm) : toast(t('noSession')));
 $('#romVideoBtn').onclick = () => (S.viewSession ? downloadVideos(S.viewSession) : toast(t('noSession')));
 $('#romPngBtn').onclick = async () => { const u = chartPNG($('#romChart')); if (u) download(await dataURLtoBlob(u), `rom_${$('#romSel').value}.png`); };
