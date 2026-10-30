@@ -29,6 +29,15 @@ async function call(body) {
   finally { clearTimeout(timer); }
 }
 
+/** 已登入後呼叫 Apps Script 的其他動作（回饋、錯誤紀錄），自動帶 session */
+export async function api(action, payload = {}) {
+  const a = current();
+  if (!configured() || !a?.session) throw new Error('not signed in');
+  const r = await call({ action, session: a.session, ...payload });
+  if (!r.ok) throw new Error(r.reason || 'failed');
+  return r;
+}
+
 // 主畫面 App（standalone）或手機：Google 彈出視窗常開在另一個分頁、結果傳不回來 → 預設用頁面跳轉登入
 const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 const isMobile = () => /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);

@@ -38,6 +38,7 @@
       <!-- 目前受測者：點一下回到步驟① -->
       <button id="curSubj" class="cursubj" type="button"></button>
       <button id="langBtn" class="ghost">EN</button>
+      <button id="fbBtn" class="ghost iconbtn" title="回饋" aria-label="回饋">💬</button>
       <button id="settingsBtn" class="ghost iconbtn" title="設定" aria-label="設定">⚙</button>
     </div>
   </header>
@@ -250,6 +251,25 @@
       <div class="btns"><button type="button" id="resetSafeBtn" data-i18n="resetSafe">還原安全模式設定</button></div>
     </form>
   </section>
+
+  <!-- 💬 使用者回饋：送到 Apps Script → 名冊試算表 Feedback 工作表 -->
+  <dialog id="fbDlg" class="fbdlg">
+    <form id="fbForm">
+      <h3 data-i18n="fbTitle">回饋與問題回報</h3>
+      <label><span data-i18n="fbCategory">類別</span>
+        <select name="category">
+          <option value="問題回報" data-i18n="fbBug">問題回報（壞掉、卡住、錯誤）</option>
+          <option value="量測不準" data-i18n="fbMeasure">量測不準</option>
+          <option value="建議" data-i18n="fbIdea">功能建議</option>
+          <option value="其他" data-i18n="fbOther">其他</option>
+        </select></label>
+      <label><span data-i18n="fbText">內容</span><textarea name="text" rows="5" required data-i18n-ph="fbPlaceholder"></textarea></label>
+      <label class="chk"><input type="checkbox" name="attach"><span data-i18n="fbAttach">附上目前的相機畫面</span></label>
+      <p id="fbAttachNote" class="hint"></p>
+      <p class="hint" data-i18n="fbAuto"></p>
+      <div class="btns"><button type="submit" id="fbSend" class="primary" data-i18n="fbSend">送出</button><button type="button" id="fbCancel" data-i18n="cancel">取消</button></div>
+    </form>
+  </dialog>
 
   <div id="toast" class="toast"></div>
 </body>

@@ -2,6 +2,10 @@
 export const STR = {
   zh: {
     appTitle: '人體姿勢分析器',
+    fbTitle: '回饋與問題回報', fbCategory: '類別', fbBug: '問題回報（壞掉、卡住、錯誤）', fbMeasure: '量測不準', fbIdea: '功能建議', fbOther: '其他', fbText: '內容',
+    fbPlaceholder: '發生了什麼事？在哪一步？希望怎麼改？', fbAttach: '附上目前的相機畫面', fbAttachWarn: '⚠ 畫面中若有受測者，會一併傳送，請確認對方同意。',
+    fbNoCamera: '（相機未開啟，無法附圖）', fbAuto: '會自動附上：版本、所在步驟、裝置與瀏覽器、相機與設定。不會傳送受測者姓名或量測數值。',
+    fbSend: '送出', fbSending: '傳送中…', fbThanks: '已收到，謝謝你的回饋！', fbFailed: '傳送失敗：',
     readRef: '講義', refNotFound: '講義中找不到這一頁', capsularHint: '多個關節同時受限時，可參考關節囊受限模式：',
     stepSubject: '① 受測者', stepItems: '② 測試項目', stepSetup: '③ 環境設定', stepTest: '④ 進行測試', stepResults: '⑤ 結果', stepRef: '⑥ 參考資料',
     subjSearch: '搜尋姓名或編號', newSubject: '＋ 新增受測者', editSubject: '編輯受測者', subjId: '編號 *', subjName: '姓名', subjSex: '性別', sexM: '男', sexF: '女', sexO: '其他',
@@ -77,6 +81,10 @@ export const STR = {
   },
   en: {
     appTitle: 'Posture Analyzer',
+    fbTitle: 'Feedback & bug report', fbCategory: 'Category', fbBug: 'Bug (broken, stuck, error)', fbMeasure: 'Inaccurate measurement', fbIdea: 'Suggestion', fbOther: 'Other', fbText: 'Details',
+    fbPlaceholder: 'What happened? At which step? What would you change?', fbAttach: 'Attach the current camera view', fbAttachWarn: '⚠ If a subject is in view, the image is sent too — make sure they agree.',
+    fbNoCamera: '(Camera is off — no image)', fbAuto: 'Automatically included: version, current step, device/browser, camera and settings. No subject names or measurements are sent.',
+    fbSend: 'Send', fbSending: 'Sending…', fbThanks: 'Thanks — feedback received!', fbFailed: 'Could not send: ',
     readRef: 'Notes', refNotFound: 'Page not found in the module', capsularHint: 'Several joints limited — see capsular patterns: ',
     stepSubject: '① Subject', stepItems: '② Tests', stepSetup: '③ Setup', stepTest: '④ Run test', stepResults: '⑤ Results', stepRef: '⑥ Reference',
     subjSearch: 'Search name or ID', newSubject: '+ New subject', editSubject: 'Edit subject', subjId: 'ID *', subjName: 'Name', subjSex: 'Sex', sexM: 'Male', sexF: 'Female', sexO: 'Other',

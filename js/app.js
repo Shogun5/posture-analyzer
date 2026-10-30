@@ -16,9 +16,10 @@ import { requireAuth, signOut, useRedirectMode, redirectMode } from './auth.js';
 import { loadModule, wrapModule } from './ectmodule.js';
 import { renderPhoto, composeBoard, meanSDTable, varLabel } from './posturecard.js';
 import { refForFlag, refForMove, refForAsym, CAPSULAR } from './reflinks.js';
+import { initFeedback, initErrorReporting } from './feedback.js';
 import { DEFAULT_FLOOR, drawFloorGuide, floorHandles, dragFloor } from './floorguide.js';
 
-export const APP_VERSION = '1.8.1'; // 與 sw.js 的 CACHE 版本一起更新
+export const APP_VERSION = '1.9.0'; // 與 sw.js 的 CACHE 版本一起更新
 
 const $ = s => document.querySelector(s);
 const fin = Number.isFinite;
@@ -67,6 +68,9 @@ function recoverFromCrash() {
   crumb('idle');
   return info;
 }
+
+// ---------------- 自動錯誤回報 ----------------
+const errRep = initErrorReporting({ ver: APP_VERSION, step: () => { try { return `${S.tab || ''}/${S.mode}/${S.phase}`; } catch { return 'init'; } } });
 
 // ---------------- 狀態 ----------------
 const S = {
@@ -140,7 +144,7 @@ async function startCamera() {
     crumb('live');
     if (!S.looping) { S.looping = true; requestAnimationFrame(loop); }
     setCamButton(true);
-  } catch (e) { crumb('idle'); const msg = e.name === 'NotReadableError' ? t('camBusy') : t('camErr') + e.message; toast(msg); $('#msg').textContent = msg; console.error(e); }
+  } catch (e) { crumb('idle'); const msg = e.name === 'NotReadableError' ? t('camBusy') : t('camErr') + e.message; toast(msg); $('#msg').textContent = msg; errRep.report(`camera ${e.name}: ${e.message}`, `deviceId=${cfg.deviceId ? 'set' : 'auto'} facing=${cfg.facing} res=${cfg.res}`); console.error(e); }
 }
 
 /** 鏡頭選單：自動（前/後鏡頭）＋ 每一顆偵測到的鏡頭（含外接 USB 鏡頭） */
@@ -425,7 +429,7 @@ async function finishRecording() {
     result = processRecording(frames, {
       view, W: canvas.width, H: canvas.height, up: S.up, height_m: cfg.height_cm / 100, mass_kg: cfg.mass_kg, visThr: cfg.visThr, baseline,
     });
-  } catch (e) { console.error(e); toast(`Analysis error: ${e.message}`); crumb('live'); setPhase('idle'); return; }
+  } catch (e) { console.error(e); errRep.report(`Analysis error: ${e.message}`, e.stack); toast(`Analysis error: ${e.message}`); crumb('live'); setPhase('idle'); return; }
   crumb('results');
   const flags = assessPosture(result.summary, view, cfg.thr);
   S.session.views[view] = { result, flags, photo: S.photo, video: clip };
@@ -608,7 +612,7 @@ async function finishRomRecording() {
       speak(parts.join('；'), { interrupt: true });
       $('#msg').textContent = parts.join('；').trim();
       renderRom();
-    } catch (e) { console.error(e); toast(`ROM error: ${e.message}`); }
+    } catch (e) { console.error(e); errRep.report(`ROM error: ${e.message}`, e.stack); toast(`ROM error: ${e.message}`); }
   } else toast('Too few frames');
   crumb('live');
   S.rom.idx++;
@@ -1259,6 +1263,18 @@ $('#signOutBtn').onclick = () => signOut();
   gateUI.hide();                     // AUTH.enabled = false 時也要移除閘門
   $('#userInfo').textContent = S.user?.email ? `${t('signedInAs')}${S.user.name ? S.user.name + ' ' : ''}<${S.user.email}>${S.user.offline ? t('offlineMode') : ''}` : '';
   $('#signOutBtn').hidden = !S.user?.email;
+  initFeedback({
+    ver: APP_VERSION, t, toast,
+    step: () => `${S.tab}/${S.mode}/${S.phase}`,
+    frame: () => (S.stream && canvas.width > 2 ? canvas.toDataURL('image/jpeg', 0.7) : null),
+    context: () => {
+      const cam = S.stream?.getVideoTracks()[0], st = cam?.getSettings?.() || {};
+      let crash = ''; try { const lc = JSON.parse(localStorage.getItem('pa.lastCrash') || 'null'); if (lc) crash = `lastCrash=${lc.stage}@${lc.at}`; } catch { /* ignore */ }
+      return [`camera=${cam?.label || 'off'} ${st.width || ''}x${st.height || ''}@${Math.round(st.frameRate || 0)}`, `fps=${S.fpsEMA.toFixed(0)}`,
+        `model=${cfg.model}/${cfg.delegate} res=${cfg.res} video=${cfg.videoFmt} voice=${cfg.voiceLevel} mirror=${cfg.mirrorView} floor=${cfg.floorOn} plumb=${S.plumbMode}`,
+        `screen=${innerWidth}x${innerHeight}@${devicePixelRatio} standalone=${matchMedia('(display-mode: standalone)').matches}`, crash].filter(Boolean).join(' | ');
+    },
+  });
   let subjects = await store.listSubjects().catch(() => []);
   if (!subjects.length && cfg.subject && (await store.listSessions().catch(() => [])).some(s => s.subject === cfg.subject)) {
     await store.saveSubject({ id: cfg.subject, name: '', height_cm: cfg.height_cm, mass_kg: cfg.mass_kg, created: new Date().toISOString() });
