@@ -96,4 +96,20 @@ button.small { min-height: 32px; padding: 4px 10px; font-size: 13px; }
 .gatediag { font: 11px ui-monospace, monospace; color: #94a3b8; margin: 10px 0 0; word-break: break-all; }
 .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #111827; color: #fff; padding: 8px 16px; border-radius: 999px; opacity: 0; transition: opacity .25s; pointer-events: none; max-width: 90vw; }
 .toast.show { opacity: .95; }
+/* 語音（一人操作）模式：提示字放大，遠處也看得到 */
+.stage.solo .msg { font-size: clamp(26px, 6.5vw, 64px); font-weight: 800; line-height: 1.25; padding: 14px 16px; white-space: pre-line; background: rgba(0,0,0,.62); }
+/* 結果：四面姿勢照片 */
+.board { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px; margin: 8px 0 16px; }
+.pcard { border: 1px solid var(--line); border-radius: 12px; padding: 10px; background: var(--bg); min-width: 0; }
+.pcard h3 { margin: 0 0 8px; }
+.pcard img { display: block; width: 100%; height: auto; border-radius: 8px; cursor: zoom-in; }
+.lightbox { position: fixed; inset: 0; z-index: 900; background: rgba(0,0,0,.92); overflow: auto; cursor: zoom-out; }
+.lightbox img { display: block; width: max(100%, 900px); height: auto; margin: 0 auto; }
+.pcard .empty { padding: 40px 10px; text-align: center; color: var(--muted); border: 1px dashed var(--line); border-radius: 8px; }
+.pcard .flag { font-size: 14px; }
+.mtbl td { white-space: normal; }
+.mtbl td:nth-child(2), .mtbl td:nth-child(3), .mtbl td:nth-child(4) { white-space: nowrap; }
+.mtbl tr.bad td { color: var(--bad); font-weight: 700; }
+details.adv { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 8px; }
+details.adv summary { cursor: pointer; color: var(--muted); font-weight: 600; padding: 6px 0; }
 button.danger { background: var(--bad); color: #fff; border-color: transparent; font-weight: 600; }

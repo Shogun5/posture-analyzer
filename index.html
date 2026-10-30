@@ -79,38 +79,34 @@
 
   <!-- 結果 -->
   <section id="tab-results" class="tab">
-    <div class="row wrap">
-      <label><span data-i18n="view">方向</span> <select id="resView"></select></label>
-      <label><span data-i18n="variables">變數</span> <select id="resVar"></select></label>
-      <label><span data-i18n="compareMode">比較模式</span>
-        <select id="resCmp">
-          <option value="none" data-i18n="cmpNone">無</option>
-          <option value="lr" data-i18n="cmpLR">左右疊圖</option>
-          <option value="session" data-i18n="cmpSession">前後測疊圖</option>
-          <option value="trend" data-i18n="trend">多日趨勢</option>
-        </select></label>
-    </div>
     <p id="resInfo" class="hint"></p>
-    <div class="chartbox"><canvas id="chart"></canvas></div>
     <div class="btns small">
       <button id="saveBtn" class="primary" data-i18n="btnSave">儲存本次</button>
-      <button id="baselineBtn" data-i18n="btnSetBaseline">設為 0° 基準</button>
-      <button id="clearBaselineBtn" data-i18n="btnClearBaseline">清除基準</button>
+      <button id="boardBtn" data-i18n="btnBoard">下載四面照片</button>
+      <button id="reportBtn" data-i18n="btnReport">HTML/PDF 報告</button>
       <button id="csvBtn" data-i18n="btnCSV">下載 CSV</button>
       <button id="videoBtn" data-i18n="btnVideo">下載影片</button>
-      <button id="pngBtn" data-i18n="btnPNG">下載圖表 PNG</button>
-      <button id="snapBtn" data-i18n="btnSnapshot">下載快照</button>
-      <button id="reportBtn" data-i18n="btnReport">HTML/PDF 報告</button>
+      <button id="baselineBtn" data-i18n="btnSetBaseline">設為 0° 基準</button>
+      <button id="clearBaselineBtn" data-i18n="btnClearBaseline">清除基準</button>
     </div>
-    <div class="row wrap top">
-      <img id="snapshot" class="snap" alt="">
-      <div class="grow">
-        <h3 data-i18n="flags">姿勢問題判讀</h3>
-        <div id="flags"></div>
-        <h3 data-i18n="summary">摘要表</h3>
-        <div id="summary" class="scroll"></div>
+    <!-- 四面姿勢照片：裁切人物 + 標註 + 問題點 + 平均 ± SD -->
+    <div id="board" class="board"></div>
+    <details class="adv">
+      <summary data-i18n="advChart">進階：記錄期間的變化曲線（研究用）</summary>
+      <div class="row wrap">
+        <label><span data-i18n="view">方向</span> <select id="resView"></select></label>
+        <label><span data-i18n="variables">變數</span> <select id="resVar"></select></label>
+        <label><span data-i18n="compareMode">比較模式</span>
+          <select id="resCmp">
+            <option value="none" data-i18n="cmpNone">無</option>
+            <option value="lr" data-i18n="cmpLR">左右疊圖</option>
+            <option value="session" data-i18n="cmpSession">前後測疊圖</option>
+            <option value="trend" data-i18n="trend">多日趨勢</option>
+          </select></label>
       </div>
-    </div>
+      <div class="chartbox"><canvas id="chart"></canvas></div>
+      <div class="btns small"><button id="pngBtn" data-i18n="btnPNG">下載圖表 PNG</button></div>
+    </details>
   </section>
 
   <!-- ROM 測試 -->

@@ -2,6 +2,7 @@
 import { LM_NAMES, VIEWS } from './biomech.js';
 import { t, getLang } from './i18n.js';
 import { MOVES, asymmetry } from './rom.js';
+import { meanSD, meanSDTable } from './posturecard.js';
 
 export function download(data, filename, type = 'application/octet-stream') {
   const blob = data instanceof Blob ? data : new Blob([data], { type });
@@ -40,7 +41,7 @@ export function sessionCSV(s, includeRawLandmarks = false) {
     });
     // 每方向摘要（便於 Excel 直接讀）
     for (const [name, st] of Object.entries(r.summary))
-      for (const k of ['mean', 'max', 'min', 'rom', 'tmax', 'tmin']) L.push(`${pre},summary,,,${name}__${k},${num(st[k])}`);
+      for (const k of ['mean', 'sd', 'max', 'min', 'rom', 'tmax', 'tmin']) L.push(`${pre},summary,,,${name}__${k},${num(k === 'sd' ? meanSD(r.filt[name]).sd : st[k])}`);
   }
   // ROM 測試：view 欄 = rom_<動作 id>；raw = 原始幀的帶號角度（未扣基準）；filtered = 相對 0° 基準
   for (const [id, r] of Object.entries(s.rom || {})) {
@@ -103,29 +104,27 @@ export const KEY_VARS = {
 };
 
 /** 自足的 HTML 報告（圖片以 dataURL 內嵌）；在瀏覽器開啟後按「列印」→ 另存 PDF */
-export function reportHTML(s, chartImgs = [], compare = null, baseline = null) {
+export function reportHTML(s, photos = {}, compare = null, baseline = null) {
   const en = getLang() === 'en';
   const views = VIEWS.filter(v => s.views?.[v]?.result);
+  // 每個方向：標註照片 + 問題姿勢 + 姿勢指標平均 ± SD（完整統計請下載 CSV）
   const sec = views.map(v => {
-    const V = s.views[v], r = V.result;
-    const flags = (V.flags || []).map(fl => `<tr class="${fl.sev}"><td>${escH(en ? fl.en : fl.zh)}</td><td>${f2(fl.value)} ${fl.unit}</td><td>${f2(fl.thr)}</td><td>${fl.sev === 'info' ? '' : t(fl.sev)}</td><td>${fl.slides}</td><td>${escH(en ? fl.tipEn : fl.tipZh)}</td></tr>`).join('');
-    const rows = KEY_VARS[v].filter(n => r.summary[n]).map(n => {
-      const st = r.summary[n], c = compare?.views?.[v]?.result?.summary?.[n], b = baseline?.[v]?.[n];
-      return `<tr><td>${n}</td><td>${f2(st.mean)}</td><td>${f2(st.min)}</td><td>${f2(st.max)}</td><td>${f2(st.rom)}</td><td>${f2(st.tmax)}</td>${compare ? `<td>${f2(c?.mean)}</td><td>${f2(st.mean - (c?.mean ?? NaN))}</td>` : ''}${baseline ? `<td>${f2(st.mean - (b ?? NaN))}</td>` : ''}</tr>`;
-    }).join('');
+    const V = s.views[v], r = V.result, img = photos[v] || V.snapshot;
+    const flags = (V.flags || []).filter(fl => fl.sev !== 'info').map(fl => `<tr class="${fl.sev}"><td>${escH(en ? fl.en : fl.zh)}</td><td>${f2(Math.abs(fl.value))} ${fl.unit}</td><td>${f2(Math.abs(fl.thr))}</td><td>${t(fl.sev)}</td><td>${fl.slides}</td><td>${escH(en ? fl.tipEn : fl.tipZh)}</td></tr>`).join('');
+    const info = (V.flags || []).filter(fl => fl.sev === 'info').map(fl => `<p class="qc">${escH(en ? fl.en : fl.zh)}</p>`).join('');
     return `<section><h2>${t('view_' + v)}</h2>
-      <div class="row">${V.snapshot ? `<img src="${V.snapshot}" alt="${v}">` : ''}
-      <div><p class="qc">${t('qc')}: ${t('fps')} ${f2(r.qc.fps)} · ${t('validPct')} ${r.qc.validPct_keypoints}% · ${t('swapped')} ${r.qc.swappedFrames} · ${t('scale')} ${(r.qc.scale_m_per_px * 1000).toFixed(3)} mm/px · plumb ${f2(r.qc.plumb_alpha_deg)}°</p>
-      <h3>${t('flags')}</h3>${flags ? `<table><tr><th>${t('flags')}</th><th>${t('value')}</th><th>${t('threshold')}</th><th>${t('severity')}</th><th>${t('slides')}</th><th>${t('note')}</th></tr>${flags}</table>` : `<p>${t('noFlags')}</p>`}</div></div>
-      <h3>${t('summary')}</h3><table><tr><th>${t('variables')}</th><th>${t('mean')}</th><th>${t('min')}</th><th>${t('max')}</th><th>${t('rom')}</th><th>${t('tmax')}</th>${compare ? `<th>${en ? 'Pre mean' : '前測平均'}</th><th>Δ</th>` : ''}${baseline ? `<th>Δ ${t('baseline')}</th>` : ''}</tr>${rows}</table></section>`;
+      ${img ? `<img class="photo" src="${img}" alt="${v}">` : ''}
+      <h3>${t('flags')}</h3>${flags ? `<table><tr><th>${t('flags')}</th><th>${t('value')}</th><th>${t('threshold')}</th><th>${t('severity')}</th><th>${t('slides')}</th><th>${t('note')}</th></tr>${flags}</table>` : `<p>${t('noFlags')}</p>`}${info}
+      <h3>${t('postureTable')}</h3>${meanSDTable(r, v, V.flags, baseline?.[v] ?? null)}
+      <p class="qc">${t('qc')}: ${t('validPct')} ${r.qc.validPct_keypoints}% · ${t('feetPct')} ${r.qc.feetVisiblePct ?? '-'}% · ${t('scale')} ${(r.qc.scale_m_per_px * 1000).toFixed(3)} mm/px · plumb ${f2(r.qc.plumb_alpha_deg)}°</p></section>`;
   }).join('');
-  const imgs = chartImgs.map(u => `<img class="chart" src="${u}">`).join('');
+  const imgs = '';
   return `<!doctype html><html lang="${en ? 'en' : 'zh-Hant'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${t('reportTitle')} ${escH(s.subject)} ${s.date.slice(0, 10)}</title>
 <style>body{font:14px/1.5 system-ui,"Noto Sans TC",sans-serif;margin:24px;color:#111;background:#fff}h1{font-size:22px}h2{border-bottom:2px solid #0f766e;padding-bottom:4px}
 table{border-collapse:collapse;width:100%;margin:8px 0;font-size:12px}td,th{border:1px solid #ccc;padding:3px 6px;text-align:left;vertical-align:top}th{background:#f1f5f9}
 tr.marked td:first-child{font-weight:700;color:#b91c1c}tr.mild td:first-child{color:#b45309}tr.info td{color:#475569;font-style:italic}
-.row{display:flex;gap:16px;flex-wrap:wrap}.row img{max-width:320px;max-height:480px;border:1px solid #ccc}.row>div{flex:1;min-width:280px}.qc{color:#475569;font-size:12px}
+.row{display:flex;gap:16px;flex-wrap:wrap}.row img{max-width:320px;max-height:480px;border:1px solid #ccc}img.photo{display:block;max-width:100%;max-height:150mm;margin:8px auto;border:1px solid #ccc}tr.bad td{color:#b91c1c;font-weight:700}.row>div{flex:1;min-width:280px}.qc{color:#475569;font-size:12px}
 img.chart{max-width:100%;margin:8px 0;border:1px solid #eee}section{page-break-inside:avoid;margin-bottom:24px}@media print{button{display:none}body{margin:8mm}}</style></head><body>
 <button onclick="print()">🖨 ${en ? 'Print / Save as PDF' : '列印 / 另存 PDF'}</button>
 <h1>${t('reportTitle')}</h1>

@@ -59,6 +59,9 @@ export const STR = {
     stage_camera: '開啟相機', stage_model: '載入模型', stage_live: '即時分析', stage_countdown: '倒數',
     stage_record: '開始錄影', stage_rec_audio: '記錄開始的嗶聲/語音', stage_rec_recorder: '啟動錄影器', stage_rec_running: '錄影中', stage_rec_snapshot: '擷取快照',
     stage_process: '資料處理', stage_results: '顯示結果', stage_save: '儲存',
+    btnBoard: '下載四面照片', advChart: '進階：記錄期間的變化曲線（研究用）', resNote: '照片與表格數值 = 記錄期間的平均值；完整統計請下載 CSV',
+    notCaptured: '尚未拍攝', noPhoto: '沒有照片', postureTable: '姿勢指標（平均 ± SD）',
+    holdStill: '站穩不動', nextView: '下一面：', allDoneShort: '四面完成 ✓\n請到「結果」查看', voiceHintShort: '語音模式\n站好後說「開始」',
   },
   en: {
     appTitle: 'Posture Analyzer',
@@ -119,6 +122,9 @@ export const STR = {
     stage_camera: 'opening camera', stage_model: 'loading model', stage_live: 'live analysis', stage_countdown: 'countdown',
     stage_record: 'starting recording', stage_rec_audio: 'record-start beep/voice', stage_rec_recorder: 'starting video recorder', stage_rec_running: 'recording frames', stage_rec_snapshot: 'taking snapshot',
     stage_process: 'processing', stage_results: 'showing results', stage_save: 'saving',
+    btnBoard: 'Download 4-view photos', advChart: 'Advanced: time series during recording (research)', resNote: 'Photo and table values = mean over the recording; full statistics in the CSV',
+    notCaptured: 'Not captured', noPhoto: 'No photo', postureTable: 'Posture measures (mean ± SD)',
+    holdStill: 'hold still', nextView: 'Next: ', allDoneShort: 'All 4 views done ✓\nSee Results', voiceHintShort: 'Voice mode\nStand in place and say “start”',
   },
 };
 
@@ -131,8 +137,14 @@ export const VOICE = {
     view_back: '背面。請再向左轉九十度，背對鏡頭站好，雙腳與髖同寬，雙手自然下垂。',
     view_left: '左側面。請再向左轉九十度，讓左側身體面對鏡頭，眼睛平視前方。',
     noPerson: '看不到受測者，請站到鏡頭前方。',
-    backUp: '請往後退一步，讓頭和腳都入鏡。',
-    comeCloser: '請往前一步。',
+    backUp: '請離鏡頭遠一點，往後退一步，讓頭和腳都入鏡。',
+    comeCloser: '請往鏡頭靠近一步。',
+    camUp: '頭頂沒有入鏡，手機鏡頭請往上抬一點。',
+    camDown: '腳沒有入鏡，手機鏡頭請往下壓一點。',
+    moveLeft: '請往你的左邊移一小步。', moveRight: '請往你的右邊移一小步。',
+    moveFwd: '請往你面向的方向走一小步。', moveBwd: '請往你背後的方向退一小步。',
+    turnLeftBit: '請再向左轉一點。', turnRightBit: '請向右轉回來一點。',
+    voiceHint: '語音模式已開啟。請站到拍攝位置後說「開始」，會依序拍正面、右側、背面、左側，每面拍完會告訴你怎麼轉，不需要走回手機。也可以說「重拍」、「下一個」或「停止」。',
     center: '請移到畫面中央。',
     turn_front: '請轉身，面向鏡頭。', turn_back: '請轉身，背對鏡頭。',
     turn_right: '請轉身，讓右側面對鏡頭。', turn_left: '請轉身，讓左側面對鏡頭。',
@@ -156,8 +168,14 @@ export const VOICE = {
     view_back: 'Back view. Turn ninety degrees to your left again, with your back to the camera. Arms relaxed.',
     view_left: 'Left side. Turn ninety degrees to your left again so your left side faces the camera.',
     noPerson: 'I cannot see you. Please step in front of the camera.',
-    backUp: 'Please step back so your head and feet are visible.',
-    comeCloser: 'Please step closer.',
+    backUp: 'Please step back from the camera so your head and feet are visible.',
+    comeCloser: 'Please step toward the camera.',
+    camUp: 'The top of your head is cut off. Tilt the phone up a little.',
+    camDown: 'Your feet are cut off. Tilt the phone down a little.',
+    moveLeft: 'Please take a small step to your left.', moveRight: 'Please take a small step to your right.',
+    moveFwd: 'Please take a small step in the direction you are facing.', moveBwd: 'Please take a small step backward.',
+    turnLeftBit: 'Turn a little more to your left.', turnRightBit: 'Turn back a little to your right.',
+    voiceHint: 'Voice mode on. Stand in position and say start. Front, right, back and left views are captured in turn; after each one I will tell you how to turn, so you do not need to walk back to the phone. You can also say retake, next, or stop.',
     center: 'Please move to the center of the frame.',
     turn_front: 'Please turn to face the camera.', turn_back: 'Please turn your back to the camera.',
     turn_right: 'Please turn so your right side faces the camera.', turn_left: 'Please turn so your left side faces the camera.',
@@ -178,8 +196,9 @@ export const VOICE = {
 
 // 語音指令關鍵字 / voice-command keywords
 export const COMMANDS = {
-  zh: { capture: ['拍照', '開始', '照相', '拍', '茄子'], next: ['下一個', '下一步', '跳過'], retake: ['重拍', '再一次', '重來'], stop: ['停止', '結束', '暫停'], repeat: ['再說一次', '重複'] },
-  en: { capture: ['capture', 'start', 'photo', 'cheese', 'shoot'], next: ['next', 'skip'], retake: ['retake', 'again', 'redo'], stop: ['stop', 'end', 'pause'], repeat: ['repeat', 'say again'] },
+  // 依序比對：較長、較特定的詞放前面（「重拍」含「拍」、「say again」含「again」）
+  zh: { repeat: ['再說一次', '重複'], retake: ['重拍', '再一次', '重來'], next: ['下一個', '下一步', '跳過'], stop: ['停止', '結束', '暫停'], capture: ['拍照', '開始', '照相', '拍', '茄子'] },
+  en: { repeat: ['repeat', 'say again'], retake: ['retake', 'again', 'redo'], next: ['next', 'skip'], stop: ['stop', 'end', 'pause'], capture: ['capture', 'start', 'photo', 'cheese', 'shoot'] },
 };
 
 let lang = 'zh';

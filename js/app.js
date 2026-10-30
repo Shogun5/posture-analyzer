@@ -7,15 +7,16 @@ import { drawOverlay } from './overlay.js';
 import { speak, beep, unlockAudio, startListening, stopListening, speechSupported, isSpeaking } from './voice.js';
 import { CanvasRecorder } from './recorder.js';
 import * as store from './storage.js';
-import { timeSeries, trend, chartPNG, summaryTable } from './charts.js';
+import { timeSeries, trend, chartPNG } from './charts.js';
 import { downloadCSV, downloadVideos, download, dataURLtoBlob, reportHTML, KEY_VARS } from './export.js';
 import { sgDerivative } from './filters.js';
 import { MOVES, BASE_SEC, timeline, demoValueAt, cueText, analyzeRom, asymmetry } from './rom.js';
 import { createDemo } from './romdemo.js';
 import { requireAuth, signOut, useRedirectMode, redirectMode } from './auth.js';
 import { loadModule, wrapModule } from './ectmodule.js';
+import { renderPhoto, composeBoard, meanSDTable, varLabel } from './posturecard.js';
 
-export const APP_VERSION = '1.3.2'; // 與 sw.js 的 CACHE 版本一起更新
+export const APP_VERSION = '1.4.0'; // 與 sw.js 的 CACHE 版本一起更新
 
 const $ = s => document.querySelector(s);
 const fin = Number.isFinite;
@@ -202,7 +203,7 @@ function loop(now) {
 
   const panel = [];
   if (S.mode === 'rom') panel.push(...romPanel());
-  else if (vars) for (const k of KEY_VARS[view].slice(0, 9)) if (fin(vars[k])) panel.push([k.replace(/_(deg|cm|m)$/, ''), `${vars[k].toFixed(1)}${k.endsWith('_deg') ? '°' : k.endsWith('_cm') ? 'cm' : 'm'}`]);
+  else if (vars && !S.voiceOn) for (const k of KEY_VARS[view].filter(n => n !== 'COM_disp_m').slice(0, 9)) if (fin(vars[k])) panel.push([varLabel(k, view).replace(/（.*$/, '').slice(0, 10), `${vars[k].toFixed(1)}${k.endsWith('_deg') ? '°' : 'cm'}`]);
   let banner = '';
   if (S.phase === 'countdown') banner = String(Math.max(0, Math.ceil((S.countdownEnd - now) / 1000)));
   if (S.phase === 'record') banner = `REC ${((now - S.recStart) / 1000).toFixed(1)} s`;
@@ -210,26 +211,65 @@ function loop(now) {
   if (S.phase === 'record' && !S.runningMarked) { S.runningMarked = true; crumb('rec_running'); }
 
   // 快照：記錄中段（姿勢模式；ROM 模式在口令「停住」結束時拍）
-  if (S.mode !== 'rom' && S.phase === 'record' && !S.snapTaken && now - S.recStart > cfg.captureSec * 500) {
+  if (S.mode !== 'rom' && S.phase === 'record' && !S.snapTaken && lm && now - S.recStart > cfg.captureSec * 500) {
     S.snapTaken = true;
-    if (!cfg.noSnapshot) { crumb('rec_snapshot'); S.snapshot = canvas.toDataURL('image/jpeg', 0.85); crumb('rec_running'); }
+    // 結果照片：存「未疊圖」的原始影格 + 該幀關鍵點，結果頁再裁切人物並標註（語言切換時可重畫）
+    if (!cfg.noSnapshot && lm) {
+      crumb('rec_snapshot');
+      const off = document.createElement('canvas'); off.width = W; off.height = H;
+      const oc = off.getContext('2d');
+      if (cfg.mirrorFix) { oc.translate(W, 0); oc.scale(-1, 1); }
+      oc.drawImage(video, 0, 0, W, H);
+      S.photo = { img: off.toDataURL('image/jpeg', 0.88), lm: lm.map(p => [...p]), W, H, up: [...S.up] };
+      crumb('rec_running');
+    }
   }
   if (S.mode !== 'rom' && S.phase === 'record' && now - S.recStart >= cfg.captureSec * 1000) finishRecording();
   renderStatus(detView);
 }
 
 // ---------------- 對位檢查 ----------------
+// 回傳語音提示的 key（null = 對位完成）。提示都以「受測者自己的方向」表達，一人操作時不必看螢幕也能調整
+const VIEW_YAW = { front: 0, right: 90, back: 180, left: -90 };
+const wrapDeg = a => ((a + 540) % 360) - 180;
+function bodyYaw(w) {
+  // world landmarks：x 影像右、z 越小越近鏡頭。面向鏡頭 0°、每向左轉 90° 加 90°（右側面 90、背面 180、左側面 −90）
+  if (!w) return NaN;
+  const pair = (l, r) => Math.atan2(w[l][2] - w[r][2], w[l][0] - w[r][0]) * 180 / Math.PI;
+  const a = pair(11, 12), b = pair(23, 24);
+  return Math.atan2(Math.sin(a * Math.PI / 180) + Math.sin(b * Math.PI / 180), Math.cos(a * Math.PI / 180) + Math.cos(b * Math.PI / 180)) * 180 / Math.PI;
+}
 function alignmentCue(det, detView) {
   if (!det) return 'noPerson';
   const n = det.norm, view = curView(), thr = cfg.visThr;
-  const visKey = [11, 12, 23, 24, 25, 26, 27, 28].reduce((s, i) => s + n[i][3], 0) / 8;
+  const feetVis = [27, 28, 29, 30].reduce((s, i) => s + n[i][3], 0) / 4;
   const shY = (n[11][1] + n[12][1]) / 2, top = n[0][1] - (shY - n[0][1]) * 0.9;
   const bottom = Math.max(n[29][1], n[30][1], n[27][1], n[28][1]);
-  if (top < 0.01 || bottom > 0.99 || visKey < thr) return 'backUp';
-  if (bottom - top < 0.45) return 'comeCloser';
+  const headCut = top < 0.01, feetCut = bottom > 0.99 || feetVis < thr;
+  // 頭或腳出界：只有一邊出界且另一邊還有空間 → 調整手機角度；兩邊都滿 → 站遠一點
+  if (headCut && feetCut) return 'backUp';
+  if (headCut) return bottom < 0.9 ? 'camUp' : 'backUp';
+  if (feetCut) return top > 0.1 ? 'camDown' : 'backUp';
+  if (bottom - top > 0.96) return 'backUp';
+  if (bottom - top < 0.5) return 'comeCloser';
+  // 左右置中：換算成受測者自己的方向（正面時影像右 = 受測者左；背面相反；側面為前後）
   const cx = (n[23][0] + n[24][0]) / 2;
-  if (cx < 0.25 || cx > 0.75) return 'center';
+  if (cx < 0.3 || cx > 0.7) {
+    const toImgRight = cx < 0.5;
+    return { front: toImgRight ? 'moveLeft' : 'moveRight', back: toImgRight ? 'moveRight' : 'moveLeft',
+      right: toImgRight ? 'moveFwd' : 'moveBwd', left: toImgRight ? 'moveBwd' : 'moveFwd' }[view];
+  }
   if (detView !== view) return `turn_${view}`;
+  // 細部轉向：身體朝向與目標差 20–60°（> 60° 多半是背面左右標反，不採用）；同一提示超過 8 秒就放行
+  const yaw = bodyYaw(det.wlm);
+  if (fin(yaw)) {
+    S.yaw = fin(S.yaw) ? S.yaw + 0.2 * wrapDeg(yaw - S.yaw) : yaw;
+    const d = wrapDeg(S.yaw - VIEW_YAW[view]);
+    if (Math.abs(d) > 20 && Math.abs(d) < 60) {
+      S.fineSince ||= performance.now();
+      if (performance.now() - S.fineSince < 8000) return d > 0 ? 'turnRightBit' : 'turnLeftBit';
+    } else S.fineSince = 0;
+  }
   // 雙手自然下垂（手腕低於髖部上方）
   const wrists = isSag(view) ? [view === 'right' ? 16 : 15] : [15, 16];
   if (wrists.some(i => n[i][1] < Math.min(n[23][1], n[24][1]) - 0.03)) return 'arms';
@@ -254,7 +294,7 @@ function gestureFired(det, now) {
 function setPhase(p) { S.phase = p; renderChips(); }
 
 function enterAlign() {
-  setPhase('align'); S.okSince = 0; S.readyAnnounced = false; S.lastCue = performance.now() + 3000;
+  setPhase('align'); S.okSince = 0; S.readyAnnounced = false; S.lastCue = performance.now() + 3000; S.yaw = NaN; S.fineSince = 0;
   say(`view_${curView()}`, { interrupt: true });
 }
 
@@ -264,7 +304,8 @@ function stepStateMachine(now, det, detView) {
   }
   if (S.phase === 'align') {
     const cue = S.gestureSince ? null : alignmentCue(det, detView);
-    $('#msg').textContent = cue ? v(cue) : '✓';
+    // 一人操作（語音模式）：大字顯示「目前方向＋要做的調整」
+    $('#msg').textContent = S.voiceOn ? `${t('view_' + curView())}\n${cue ? v(cue) : '✓ ' + t('holdStill')}` : (cue ? v(cue) : '✓');
     if (cue) {
       S.okSince = 0;
       if (now - S.lastCue > 3500 && !isSpeaking()) { say(cue); S.lastCue = now; }
@@ -318,10 +359,11 @@ async function finishRecording() {
   } catch (e) { console.error(e); toast(`Analysis error: ${e.message}`); crumb('live'); setPhase('idle'); return; }
   crumb('results');
   const flags = assessPosture(result.summary, view, cfg.thr);
-  S.session.views[view] = { result, flags, snapshot: S.snapshot, video: clip };
+  S.session.views[view] = { result, flags, photo: S.photo, video: clip };
+  S.photo = null;
   S.session.plumbMode = S.plumbMode; S.session.up = S.up;
   S.viewSession = S.session;
-  beep(880, 120); say('viewDone', { interrupt: true });
+  beep(880, 120); speak(`${v('view_' + view).split(/[。.]/)[0]}${getLang() === 'en' ? '. ' : ''}${v('viewDone')}`, { interrupt: true });
   const nFlags = flags.filter(f => f.sev !== 'info').length;
   toast(`${t('view_' + view)} ✓  ${t('flags')}: ${nFlags}`);
   // 腳不在畫面：比例尺/原點改用替代方法，下肢與鉛垂偏移指標無法計算 → 畫面與語音提醒
@@ -331,8 +373,12 @@ async function finishRecording() {
 
   if (S.guided) {
     const next = VIEWS.findIndex((vw, i) => i > S.viewIdx && !S.session.views[vw]);
-    if (next >= 0) { S.viewIdx = next; setTimeout(enterAlign, 1500); }
-    else { S.guided = false; setPhase('idle'); say('allDone'); await saveCurrent(true); }
+    if (next >= 0) {
+      S.viewIdx = next; renderChips();
+      if (S.voiceOn) $('#msg').textContent = `${t('view_' + view)} ✓\n${t('nextView')}${t('view_' + VIEWS[next])}`;
+      setTimeout(() => { if (S.guided && S.phase === 'done') enterAlign(); }, 1800);
+    }
+    else { S.guided = false; setPhase('idle'); say('allDone'); $('#msg').textContent = S.voiceOn ? t('allDoneShort') : ''; await saveCurrent(true); showTab('results'); }
   } else setPhase('idle');
 }
 
@@ -484,7 +530,16 @@ function romCommand(cmd) {
 // 指令（語音/按鈕共用）
 function command(cmd) {
   if (S.mode === 'rom') { romCommand(cmd); return; }
-  if (cmd === 'capture') { if (S.phase === 'align' || S.phase === 'idle') startCountdown(); }
+  if (cmd === 'capture') {
+    // 語音模式 = 一人操作：說「開始」就進入引導拍攝，從目前方向開始，每面拍完自動換到下一面
+    if (S.voiceOn && !S.guided && S.phase === 'idle' && S.stream) {
+      S.guided = true;
+      if (!S.session || VIEWS.every(vw => S.session.views[vw])) { S.session = newSession(); S.viewIdx = 0; }
+      const todo = VIEWS.findIndex((vw, i) => i >= S.viewIdx && !S.session.views[vw]);
+      S.viewIdx = todo >= 0 ? todo : VIEWS.findIndex(vw => !S.session.views[vw]);
+      enterAlign();
+    } else if (S.phase === 'align' || S.phase === 'idle') startCountdown();
+  }
   else if (cmd === 'next') { S.viewIdx = (S.viewIdx + 1) % 4; if (S.guided) enterAlign(); else renderChips(); }
   else if (cmd === 'retake') { if (S.phase !== 'record') { S.guided = true; enterAlign(); } }
   else if (cmd === 'stop') { S.guided = false; S.recorder?.stop(); setPhase('idle'); if (S.stream) crumb('live'); speechSynthesis.cancel(); $('#msg').textContent = ''; }
@@ -554,47 +609,81 @@ function renderResults(preferView) {
   const s = S.viewSession;
   const sel = $('#resView');
   const avail = VIEWS.filter(vw => s?.views?.[vw]?.result);
-  if (!avail.length) { $('#resInfo').textContent = t('noSession'); $('#flags').innerHTML = ''; $('#summary').innerHTML = ''; $('#snapshot').removeAttribute('src'); return; }
+  if (!avail.length) { $('#resInfo').textContent = t('noSession'); $('#board').innerHTML = ''; return; }
+  // 進階圖表的選單（變數以中文名稱顯示）
   const cur = preferView && avail.includes(preferView) ? preferView : avail.includes(sel.value) ? sel.value : avail[0];
   sel.innerHTML = avail.map(vw => `<option value="${vw}" ${vw === cur ? 'selected' : ''}>${t('view_' + vw)}</option>`).join('');
-  const V = s.views[cur], r = V.result;
+  const r = s.views[cur].result;
   const vs = $('#resVar'), prev = vs.value;
   const names = Object.keys(r.filt).sort((a, b) => (KEY_VARS[cur].includes(b) - KEY_VARS[cur].includes(a)) || a.localeCompare(b));
   // 預設選第一個有數值的變數（沿用上次選擇，除非它整段都是缺值）
   const hasData = n => fin(r.summary[n]?.mean);
   const pick = names.includes(prev) && hasData(prev) ? prev : names.find(hasData) ?? names[0];
-  vs.innerHTML = names.map(n => `<option ${n === pick ? 'selected' : ''}>${n}</option>`).join('');
-  $('#snapshot').src = V.snapshot || '';
-  const q = r.qc;
-  $('#resInfo').textContent = `${s.subject} · ${new Date(s.date).toLocaleString()} · ${t('qc')}: ${t('fps')} ${q.fps.toFixed(1)}, ${t('validPct')} ${q.validPct_keypoints}%, ${t('feetPct')} ${q.feetVisiblePct ?? '-'}%, ${t('scale')} ${q.scale_source ?? '-'}, ${t('swapped')} ${q.swappedFrames}${S.baseline ? ' · ' + t('deltaNote') : ''}${q.feetVisiblePct < 50 ? ' · ⚠ ' + t('feetMissing') : ''}`;
-  const lang = getLang();
-  $('#flags').innerHTML = V.flags.length ? V.flags.map(f => `<div class="flag ${f.sev}"><b>${lang === 'en' ? f.en : f.zh}</b>${fin(f.value) ? `${t('value')}: ${f.value.toFixed(1)} ${f.unit} (${t('threshold')} ${f.thr}) · ${t(f.sev)} · ` : ''}${t('slides')} ${f.slides}<br><small>${lang === 'en' ? f.tipEn : f.tipZh}</small></div>`).join('') : `<p>${t('noFlags')}</p>`;
-  const rows = KEY_VARS[cur].filter(n => r.summary[n]).map(n => ({ name: n, s: r.summary[n] }));
-  $('#summary').innerHTML = summaryTable(rows);
+  vs.innerHTML = names.map(n => `<option value="${n}" ${n === pick ? 'selected' : ''}>${varLabel(n, cur)}</option>`).join('');
+  const feetLow = avail.filter(vw => s.views[vw].result.qc.feetVisiblePct < 50).map(vw => t('view_' + vw));
+  $('#resInfo').textContent = `${s.subject} · ${new Date(s.date).toLocaleString()} · ${t('resNote')}${S.baseline ? ' · ' + t('deltaNote') : ''}${feetLow.length ? ` · ⚠ ${feetLow.join('、')}：${t('feetMissing')}` : ''}`;
+  renderBoard(s);
   drawChart();
 }
+
+// 四面姿勢照片卡片：照片（裁切人物＋標註）、問題姿勢、平均 ± SD
+const photoCache = new Map();   // `${session.id}|${view}|${lang}` → canvas
+async function photoCanvas(s, vw) {
+  const V = s.views?.[vw]; if (!V?.photo) return null;
+  const key = `${s.id}|${vw}|${getLang()}`;
+  if (!photoCache.has(key)) photoCache.set(key, await renderPhoto(V.photo, vw, V.result, V.flags, { title: `${t('view_' + vw)} · ${s.subject}`, visThr: cfg.visThr }));
+  return photoCache.get(key);
+}
+let boardToken = 0;
+async function renderBoard(s) {
+  const token = ++boardToken, lang = getLang();
+  $('#board').innerHTML = VIEWS.map(vw => {
+    const V = s.views?.[vw];
+    if (!V?.result) return `<div class="pcard"><h3>${t('view_' + vw)}</h3><div class="empty">${t('notCaptured')}</div></div>`;
+    const flags = V.flags || [];
+    const fl = flags.filter(f => f.sev !== 'info'), info = flags.filter(f => f.sev === 'info');
+    const tip = f => (lang === 'en' ? f.tipEn : f.tipZh);
+    const flagHtml = (fl.length ? fl.map(f => `<div class="flag ${f.sev}"><b>${lang === 'en' ? f.en : f.zh}</b>${fin(f.value) ? `${t('value')} ${Math.abs(f.value).toFixed(1)} ${f.unit}（${t('threshold')} ${Math.abs(f.thr)}）· ${t(f.sev)} · ` : ''}${t('slides')} ${f.slides}${tip(f) ? `<br><small>${tip(f)}</small>` : ''}</div>`).join('') : `<p>${t('noFlags')}</p>`)
+      + info.map(f => `<div class="flag info">${lang === 'en' ? f.en : f.zh}</div>`).join('');
+    const img = V.photo ? `<img data-view="${vw}" alt="${t('view_' + vw)}">` : V.snapshot ? `<img src="${V.snapshot}" alt="${t('view_' + vw)}">` : `<div class="empty">${t('noPhoto')}</div>`;
+    return `<div class="pcard"><h3>${t('view_' + vw)}</h3>${img}<h4>${t('flags')}</h4>${flagHtml}<h4>${t('postureTable')}</h4><div class="scroll">${meanSDTable(V.result, vw, flags, S.baseline?.views?.[vw] ?? null)}</div></div>`;
+  }).join('');
+  for (const vw of VIEWS) {
+    const el = $(`#board img[data-view="${vw}"]`); if (!el) continue;
+    try { const cv = await photoCanvas(s, vw); if (token !== boardToken) return; if (cv) el.src = cv.toDataURL('image/jpeg', 0.9); }
+    catch (e) { console.warn('photo', e); }
+  }
+}
+// 點照片：全螢幕原尺寸檢視（手機上標註字較小時可放大、捲動），再點一下關閉
+$('#board').addEventListener('click', e => {
+  const im = e.target.closest('.pcard img'); if (!im?.src) return;
+  const box = document.createElement('div'); box.className = 'lightbox';
+  box.innerHTML = `<img src="${im.src}" alt="">`;
+  box.onclick = () => box.remove();
+  document.body.appendChild(box);
+});
 
 async function drawChart() {
   const s = S.viewSession; if (!s) return;
   const view = $('#resView').value, name = $('#resVar').value, mode = $('#resCmp').value;
   const r = s.views?.[view]?.result; if (!r || !name) return;
-  const cv = $('#chart'), unit = unitOf(name);
+  const cv = $('#chart'), unit = unitOf(name), lbl = varLabel(name, view);
   if (mode === 'trend') {
     const all = (await store.listSessions()).filter(x => x.subject === s.subject && x.views?.[view]?.result?.summary?.[name]);
     const base = S.baseline?.views?.[view]?.[name];
     const pts = all.map(x => ({ date: x.date.slice(0, 10), y: x.views[view].result.summary[name].mean - (fin(base) && name.endsWith('_deg') ? base : 0) }));
-    trend(cv, name, pts, `${name}${fin(base) ? ' Δ' : ''} (${unit})`);
+    trend(cv, lbl, pts, `${lbl}${fin(base) ? ' Δ' : ''} (${unit})`);
     return;
   }
-  const series = [{ label: `${name} (filtered)`, t: r.t, y: r.filt[name] }];
-  if (mode === 'none' && r.raw[name]) series.push({ label: `${name} (raw)`, t: r.tRaw, y: r.raw[name], dash: true });
-  if (mode === 'lr') { const m = mirrorName(name); if (m && r.filt[m]) series.push({ label: m, t: r.t, y: r.filt[m] }); }
+  const series = [{ label: `${lbl}`, t: r.t, y: r.filt[name] }];
+  if (mode === 'none' && r.raw[name]) series.push({ label: `${lbl} (raw)`, t: r.tRaw, y: r.raw[name], dash: true });
+  if (mode === 'lr') { const m = mirrorName(name); if (m && r.filt[m]) series.push({ label: varLabel(m, view), t: r.t, y: r.filt[m] }); }
   if (mode === 'session') {
     const c = S.compare?.views?.[view]?.result;
-    if (c?.filt[name]) series.push({ label: `${name} (${S.compare.date.slice(0, 10)})`, t: c.t, y: c.filt[name], dash: true });
+    if (c?.filt[name]) series.push({ label: `${lbl} (${S.compare.date.slice(0, 10)})`, t: c.t, y: c.filt[name], dash: true });
     else toast(t('btnCompare'));
   }
-  timeSeries(cv, series, `${name} (${unit})`);
+  timeSeries(cv, series, `${lbl} (${unit})`);
 }
 ['#resView', '#resVar', '#resCmp'].forEach(id => $(id).addEventListener('change', () => (id === '#resView' ? renderResults($('#resView').value) : drawChart())));
 
@@ -617,15 +706,23 @@ $('#clearBaselineBtn').onclick = async () => { await store.deleteBaseline(cfg.su
 $('#csvBtn').onclick = () => (S.viewSession ? downloadCSV(S.viewSession, cfg.rawLm) : toast(t('noSession')));
 $('#videoBtn').onclick = () => (S.viewSession ? downloadVideos(S.viewSession) : toast(t('noSession')));
 $('#pngBtn').onclick = async () => { const u = chartPNG($('#chart')); if (u) download(await dataURLtoBlob(u), `chart_${$('#resVar').value}.png`); };
-$('#snapBtn').onclick = async () => { const u = $('#snapshot').src; if (u) download(await dataURLtoBlob(u), `snapshot_${$('#resView').value}.jpg`); };
-$('#reportBtn').onclick = () => {
+// 四面照片合成一張 PNG（2×2）
+$('#boardBtn').onclick = async () => {
   const s = S.viewSession; if (!s) return toast(t('noSession'));
-  const imgs = []; const u = chartPNG($('#chart')); if (u) imgs.push(u);
-  const html = reportHTML(s, imgs, S.compare, S.baseline?.views ?? null);
+  const cvs = []; for (const vw of VIEWS) cvs.push(await photoCanvas(s, vw).catch(() => null));
+  const board = composeBoard(cvs); if (!board) return toast(t('noPhoto'));
+  download(await dataURLtoBlob(board.toDataURL('image/jpeg', 0.92)), `posture_${s.subject}_${s.date.slice(0, 10)}.jpg`);
+};
+$('#reportBtn').onclick = async () => {
+  const s = S.viewSession; if (!s) return toast(t('noSession'));
+  const w = window.open('', '_blank');          // 先開分頁（在點擊當下，避免被擋），照片畫好後再填入
+  const photos = {};
+  for (const vw of VIEWS) { const cv = await photoCanvas(s, vw).catch(() => null); if (cv) photos[vw] = cv.toDataURL('image/jpeg', 0.88); }
+  const html = reportHTML(s, photos, S.compare, S.baseline?.views ?? null);
   const blob = new Blob([html], { type: 'text/html' });
   download(blob, `report_${s.subject}_${s.date.slice(0, 10)}.html`);
-  const w = window.open(URL.createObjectURL(blob), '_blank'); // 開新分頁 → 列印 → 另存 PDF
-  if (!w) toast('HTML downloaded');
+  if (w) w.location.href = URL.createObjectURL(blob);   // 新分頁 → 列印 → 另存 PDF
+  else toast('HTML downloaded');
 };
 
 // ---------------- ROM 分頁 ----------------
@@ -807,9 +904,14 @@ function startVoice() {
 }
 $('#voiceBtn').onclick = () => {
   if (!speechSupported()) { toast(t('speechUnsupported')); return; }
+  unlockAudio();
   S.voiceOn = !S.voiceOn;
   if (S.voiceOn) startVoice(); else stopListening();
   $('#voiceBtn').textContent = t(S.voiceOn ? 'btnVoiceOn' : 'btnVoiceOff');
+  // 一人操作模式：放大提示字；說明怎麼用
+  $('.stage').classList.toggle('solo', S.voiceOn);
+  if (S.voiceOn) { say('voiceHint', { interrupt: true }); if (S.phase === 'idle') $('#msg').textContent = t('voiceHintShort'); }
+  else if (S.phase === 'idle') $('#msg').textContent = '';
 };
 
 // ---------------- 登入閘門 UI ----------------
