@@ -6,6 +6,9 @@ export const STR = {
     fbPlaceholder: '發生了什麼事？在哪一步？希望怎麼改？', fbAttach: '附上目前的相機畫面', fbAttachWarn: '⚠ 畫面中若有受測者，會一併傳送，請確認對方同意。',
     fbNoCamera: '（相機未開啟，無法附圖）', fbAuto: '會自動附上：版本、所在步驟、裝置與瀏覽器、相機與設定。不會傳送受測者姓名或量測數值。',
     fbSend: '送出', fbSending: '傳送中…', fbThanks: '已收到，謝謝你的回饋！', fbFailed: '傳送失敗：',
+    btnProm: '▶ 開始 PROM', btnPain: '⚡ 痛（標記角度）', promAdd: '＋ PROM', promQueued: '✓ 已加入 PROM', promQueuedToast: '已加入 PROM，到「④ 進行測試」按「開始 PROM」',
+    promNone: '請先在「⑤ 結果 → AROM」按「＋ PROM」選擇要加測的動作', promGain: 'PROM − AROM', painAt: '開始痛°', painMarked: '已標記疼痛角度',
+    promNote: 'PROM = 協助者帶動的被動角度（絕對角度，與 AROM 同基準）。PROM − AROM ≥ 10° 以橘色標示：被動明顯較大，多為肌力或動作控制不足；兩者都受限則偏向關節囊或軟組織受限。「開始痛°」A = AROM、P = PROM。',
     readRef: '講義', refNotFound: '講義中找不到這一頁', capsularHint: '多個關節同時受限時，可參考關節囊受限模式：',
     stepSubject: '① 受測者', stepItems: '② 測試項目', stepSetup: '③ 環境設定', stepTest: '④ 進行測試', stepResults: '⑤ 結果', stepRef: '⑥ 參考資料',
     subjSearch: '搜尋姓名或編號', newSubject: '＋ 新增受測者', editSubject: '編輯受測者', subjId: '編號 *', subjName: '姓名', subjSex: '性別', sexM: '男', sexF: '女', sexO: '其他',
@@ -85,6 +88,9 @@ export const STR = {
     fbPlaceholder: 'What happened? At which step? What would you change?', fbAttach: 'Attach the current camera view', fbAttachWarn: '⚠ If a subject is in view, the image is sent too — make sure they agree.',
     fbNoCamera: '(Camera is off — no image)', fbAuto: 'Automatically included: version, current step, device/browser, camera and settings. No subject names or measurements are sent.',
     fbSend: 'Send', fbSending: 'Sending…', fbThanks: 'Thanks — feedback received!', fbFailed: 'Could not send: ',
+    btnProm: '▶ Start PROM', btnPain: '⚡ Pain (mark angle)', promAdd: '+ PROM', promQueued: '✓ PROM queued', promQueuedToast: 'Added to PROM — go to ④ Run test and press Start PROM',
+    promNone: 'First tap “+ PROM” on movements in ⑤ Results → AROM', promGain: 'PROM − AROM', painAt: 'Pain at°', painMarked: 'Pain angle marked',
+    promNote: 'PROM = passive angle moved by a helper (absolute, same reference as AROM). PROM − AROM ≥ 10° is highlighted: much larger passive range suggests weakness or motor-control deficit; both limited suggests capsular or soft-tissue restriction. “Pain at°”: A = AROM, P = PROM.',
     readRef: 'Notes', refNotFound: 'Page not found in the module', capsularHint: 'Several joints limited — see capsular patterns: ',
     stepSubject: '① Subject', stepItems: '② Tests', stepSetup: '③ Setup', stepTest: '④ Run test', stepResults: '⑤ Results', stepRef: '⑥ Reference',
     subjSearch: 'Search name or ID', newSubject: '+ New subject', editSubject: 'Edit subject', subjId: 'ID *', subjName: 'Name', subjSex: 'Sex', sexM: 'Male', sexF: 'Female', sexO: 'Other',
@@ -189,6 +195,8 @@ export const VOICE = {
     recording: '開始，不要動。',
     viewDone: '完成。',
     allDone: '四面完成，謝謝。',
+    promIntro: 'PROM 被動關節活動度。協助者請站在受測者後方，不要擋住關節。受測者放鬆，會痛就說「痛」。',
+    promHow: '受測者放鬆，協助者慢慢帶到最大範圍並停住。會痛請說痛。',
     romTurn_front: '換正面，請面向鏡頭。', romTurn_back: '換背面，請背對鏡頭。', romTurn_right: '換右側，請轉身讓右側朝向鏡頭。', romTurn_left: '換左側，請轉身讓左側朝向鏡頭。',
     romIntro: '關節活動度測試。看示範，跟口令做。',
     romAllDone: '測試完成，謝謝。',
@@ -221,6 +229,8 @@ export const VOICE = {
     recording: 'Recording, hold still.',
     viewDone: 'Done.',
     allDone: 'All four views done. Thank you.',
+    promIntro: 'Passive range of motion. Helper, stand behind the subject without blocking the joints. Subject, relax and say pain if it hurts.',
+    promHow: 'Subject relaxes; helper slowly moves the limb to end range and holds. Say pain if it hurts.',
     romTurn_front: 'Front view: face the camera. ', romTurn_back: 'Back view: back to the camera. ', romTurn_right: 'Right side: turn so your right side faces the camera. ', romTurn_left: 'Left side: turn so your left side faces the camera. ',
     romIntro: 'Range of motion test. Watch the demo and follow the cues.',
     romAllDone: 'Test complete. Thank you.',
@@ -272,8 +282,8 @@ export const VOICE_FULL = {
 // 語音指令關鍵字 / voice-command keywords
 export const COMMANDS = {
   // 依序比對：較長、較特定的詞放前面（「重拍」含「拍」、「say again」含「again」）
-  zh: { repeat: ['再說一次', '重複'], retake: ['重拍', '再一次', '重來'], next: ['下一個', '下一步', '跳過'], stop: ['停止', '結束', '暫停'], capture: ['拍照', '開始', '照相', '拍', '茄子'] },
-  en: { repeat: ['repeat', 'say again'], retake: ['retake', 'again', 'redo'], next: ['next', 'skip'], stop: ['stop', 'end', 'pause'], capture: ['capture', 'start', 'photo', 'cheese', 'shoot'] },
+  zh: { pain: ['好痛', '會痛', '痛'], repeat: ['再說一次', '重複'], retake: ['重拍', '再一次', '重來'], next: ['下一個', '下一步', '跳過'], stop: ['停止', '結束', '暫停'], capture: ['拍照', '開始', '照相', '拍', '茄子'] },
+  en: { pain: ['pain', 'ouch', 'hurts'], repeat: ['repeat', 'say again'], retake: ['retake', 'again', 'redo'], next: ['next', 'skip'], stop: ['stop', 'end', 'pause'], capture: ['capture', 'start', 'photo', 'cheese', 'shoot'] },
 };
 
 let lang = 'zh';

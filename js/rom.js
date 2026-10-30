@@ -129,25 +129,37 @@ function sideMoves(S) {
 export const moveById = id => MOVES.find(m => m.id === id);
 
 /** 口令時間軸 keys: [{t, v, cueKey}]（cueKey: ready/pos/hold/back/neg/hold2/back2） */
-export function timeline(m) {
-  const k = [{ t: 0, v: 0, cue: 'ready' }, { t: BASE_SEC, v: 0, cue: 'pos' }, { t: BASE_SEC + 2.5, v: m.pos.to, cue: 'hold' },
-    { t: BASE_SEC + 4, v: m.pos.to, cue: 'back' }, { t: BASE_SEC + 6, v: 0 }];
-  if (m.neg) k.push({ t: BASE_SEC + 6.3, v: 0, cue: 'neg' }, { t: BASE_SEC + 8.5, v: m.neg.to, cue: 'hold2' },
-    { t: BASE_SEC + 10, v: m.neg.to, cue: 'back2' }, { t: BASE_SEC + 12, v: 0 });
+// slow：PROM 由協助者慢慢帶到終點並停久一點，時間軸拉長
+export function timeline(m, slow = 1) {
+  const s = x => BASE_SEC + x * slow;
+  const k = [{ t: 0, v: 0, cue: 'ready' }, { t: BASE_SEC, v: 0, cue: 'pos' }, { t: s(2.5), v: m.pos.to, cue: 'hold' },
+    { t: s(4), v: m.pos.to, cue: 'back' }, { t: s(6), v: 0 }];
+  if (m.neg) k.push({ t: s(6.3), v: 0, cue: 'neg' }, { t: s(8.5), v: m.neg.to, cue: 'hold2' },
+    { t: s(10), v: m.neg.to, cue: 'back2' }, { t: s(12), v: 0 });
   return { keys: k, duration: k[k.length - 1].t + 0.8 };
 }
 const ease = x => 0.5 - 0.5 * Math.cos(Math.PI * x);
-export function demoValueAt(m, t) {
-  const { keys } = timeline(m);
+export function demoValueAt(m, t, slow = 1) {
+  const { keys } = timeline(m, slow);
   for (let i = 1; i < keys.length; i++) if (t <= keys[i].t) {
     const a = keys[i - 1], b = keys[i], f = (t - a.t) / Math.max(1e-6, b.t - a.t);
     return a.v + (b.v - a.v) * ease(Math.min(1, Math.max(0, f)));
   }
   return 0;
 }
-/** 口令文字；short = 簡易版（只講動作） */
-export function cueText(m, cue, lang, short = false) {
+/** 口令文字；short = 簡易版（只講動作）；prom = 被動（對協助者說） */
+export function cueText(m, cue, lang, short = false, prom = false) {
   const zh = lang !== 'en';
+  if (prom) {
+    const d = cue === 'neg' ? m.neg : m.pos;
+    switch (cue) {
+      case 'ready': return zh ? '受測者放鬆' : 'Subject relax';
+      case 'pos': case 'neg': return zh ? `協助${d.zh}，帶到最大` : `Assist ${d.en} to end range`;
+      case 'hold': case 'hold2': return zh ? '停住' : 'Hold';
+      case 'back': case 'back2': return zh ? '慢慢回來' : 'Slowly back';
+      default: return '';
+    }
+  }
   const pick = c => (short ? (zh ? c.sZh : c.sEn) : (zh ? c.cueZh : c.cueEn));
   switch (cue) {
     case 'ready': return short ? (zh ? '不要動' : 'Still') : (zh ? '保持不動' : 'Hold still');

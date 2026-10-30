@@ -17,9 +17,9 @@ import { loadModule, wrapModule } from './ectmodule.js';
 import { renderPhoto, composeBoard, meanSDTable, varLabel } from './posturecard.js';
 import { refForFlag, refForMove, refForAsym, CAPSULAR } from './reflinks.js';
 import { initFeedback, initErrorReporting } from './feedback.js';
-import { DEFAULT_FLOOR, drawFloorGuide, floorHandles, dragFloor } from './floorguide.js';
+import { DEFAULT_FLOOR, drawFloorGuide, floorHandles, dragFloor, floorQuad } from './floorguide.js';
 
-export const APP_VERSION = '1.9.1'; // 與 sw.js 的 CACHE 版本一起更新
+export const APP_VERSION = '1.10.0'; // 與 sw.js 的 CACHE 版本一起更新
 
 const $ = s => document.querySelector(s);
 const fin = Number.isFinite;
@@ -80,7 +80,7 @@ const S = {
   liveScale: NaN, hist: [], trails: { COM: [], hipMid: [], R_heel: [], head: [] },
   okSince: 0, lastCue: 0, readyAnnounced: false, gestureSince: 0,
   countdownEnd: 0, lastCount: -1, recFrames: [], recStart: 0, snapTaken: false, recorder: null,
-  session: null, viewSession: null, compare: null, baseline: null, voiceOn: false,
+  session: null, viewSession: null, compare: null, baseline: null, voiceOn: false, promQueue: [], promSession: null,
 };
 const canvas = $('#stage'), ctx = canvas.getContext('2d', { willReadFrequently: false }), video = $('#video');
 // 鏡像顯示用的第二張畫布：只給受測者看（像照鏡子）；錄影、快照、量測都用未鏡像的主畫布
@@ -186,15 +186,15 @@ function setCamButton(on) {
     b.textContent = t(b.dataset.i18n);
     b.classList.toggle('primary', !on); b.classList.toggle('danger', on);
   }
-  updateChecks();
+  updateChecks(); renderPromBtn();
 }
 async function ensureModel() {
-  const key = `${cfg.model}/${cfg.delegate}`;
+  const n = S.rom?.prom ? 2 : 1, key = `${cfg.model}/${cfg.delegate}/${n}`;
   if (S.pose && S.poseVariant === key) return;
   crumb('model');
   $('#msg').textContent = t('loadingModel');
   S.pose?.close?.();
-  S.pose = await createPose(cfg.model, cfg.delegate);
+  S.pose = await createPose(cfg.model, cfg.delegate, n);
   S.poseVariant = key;
   $('#msg').textContent = '';
   toast(t('modelReady'));
@@ -220,6 +220,7 @@ function loop(now) {
   let det = null;
   // 不需鏡像修正時直接把 video 交給模型（MediaPipe 的標準用法）；需要時才用翻轉後的畫布
   try { det = detect(S.pose, cfg.mirrorFix ? canvas : video, now, W, H); } catch (e) { console.warn(e); }
+  if (det?.all?.length > 1) det = pickSubject(det.all, W, H);
   const view = S.mode === 'rom' ? romMove().view : curView();
   const detView = det ? detectView(det.lm) : null;   // 像素座標：正規化座標的 x/y 比例不同，橫向畫面會把正面誤判為側面
   let lm = det?.lm ?? null, swapped = false;
@@ -290,6 +291,25 @@ function loop(now) {
   }
   if (S.mode !== 'rom' && S.phase === 'record' && now - S.recStart >= cfg.captureSec * 1000) finishRecording();
   renderStatus(detView);
+}
+
+// ---------------- PROM：畫面中有協助者時，挑出受測者 ----------------
+// 1) 腳踩在井字框（A4 紙）內的人；2) 與上一幀受測者的髖中點最近；3) 都無法判斷時取畫面中身形最高的人
+function pickSubject(all, W, H) {
+  const hip = d => [(d.lm[23][0] + d.lm[24][0]) / 2, (d.lm[23][1] + d.lm[24][1]) / 2];
+  let best = null;
+  if (cfg.floorOn) {
+    const q = floorQuad(cfg.floor, W, H), inside = p => {   // 點在凸四邊形內
+      let s = 0; for (let i = 0; i < 4; i++) { const a = q[i], b = q[(i + 1) % 4], c = (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]); if (c !== 0) { if (s && Math.sign(c) !== s) return false; s = Math.sign(c); } }
+      return true;
+    };
+    const onSheet = all.filter(d => [27, 28, 29, 30].some(i => d.lm[i][3] > 0.3 && inside(d.lm[i])));
+    if (onSheet.length === 1) best = onSheet[0];
+  }
+  if (!best && S.subjHip) best = all.reduce((a, d) => (Math.hypot(...hip(d).map((v, i) => v - S.subjHip[i])) < Math.hypot(...hip(a).map((v, i) => v - S.subjHip[i])) ? d : a));
+  if (!best) { const h = d => Math.max(...d.lm.map(p => p[1])) - Math.min(...d.lm.map(p => p[1])); best = all.reduce((a, d) => (h(d) > h(a) ? d : a)); }
+  S.subjHip = hip(best);
+  return { ...best, all };
 }
 
 // ---------------- 對位檢查 ----------------
@@ -474,7 +494,25 @@ function startRomTest() {
   S.rom = { list, idx: 0, phaseStart: 0, cueIdx: 0, live: {}, snaps: {}, lastView: null };
   $('#romDemo').toggleAttribute('hidden', false); // SVG 元素沒有 .hidden 屬性
   $('.stage').classList.add('solo');              // AROM：受測者站在遠處，提示字放大
+  $('#painBtn').hidden = false;
   speak(v('romIntro'), { interrupt: true });
+  enterRomIntro(true);
+}
+/** PROM：只測在結果頁按了「＋ PROM」的動作；結果存進同一筆紀錄（session.prom）與 AROM 並排 */
+async function startPromTest() {
+  unlockAudio();
+  if (!S.pose) { toast(t('cameraOff')); return; }
+  const list = MOVES.filter(m => S.promQueue.includes(m.id));
+  if (!list.length) { toast(t('promNone')); return; }
+  S.mode = 'rom'; S.guided = false;
+  S.session = S.promSession || S.viewSession || newSession(); S.session.prom ??= {};
+  S.rom = { list, idx: 0, phaseStart: 0, cueIdx: 0, live: {}, snaps: {}, lastView: null, prom: true };
+  S.subjHip = null;
+  await ensureModel();                               // 換成可偵測 2 人的模型
+  $('#romDemo').toggleAttribute('hidden', false);
+  $('.stage').classList.add('solo');
+  $('#painBtn').hidden = false;
+  speak(v('promIntro'), { interrupt: true });
   enterRomIntro(true);
 }
 function enterRomIntro(queue = false) {
@@ -488,15 +526,19 @@ function enterRomIntro(queue = false) {
   // 換觀測面時先明確提示怎麼轉身（例如從右側換到背面/左側），畫面大字同步顯示
   const turn = S.rom.lastView !== m.view ? v(`romTurn_${m.view}`) : '';
   S.rom.lastView = m.view;
-  speak(`${turn}${full ? `${S.rom.idx + 1}. ${name}。${en ? m.introEn : m.introZh}` : `${name}。`}`, { interrupt: !queue });
+  const pre = S.rom.prom ? 'PROM ' : '';
+  speak(`${turn}${pre}${full ? `${S.rom.idx + 1}. ${name}。${S.rom.prom ? v('promHow') : en ? m.introEn : m.introZh}` : `${name}。`}`, { interrupt: !queue });
   if (turn) S.rom.phaseStart += 3000;                // 多留 3 秒轉身
-  $('#msg').textContent = `${turn ? `${t('view_' + m.view)}：${turn}\n` : ''}${S.rom.idx + 1}/${S.rom.list.length}  ${name}`;   // 換掉上一個動作留下的口令（例如「回來」）
+  $('#msg').textContent = `${turn ? `${t('view_' + m.view)}：${turn}\n` : ''}${pre}${S.rom.idx + 1}/${S.rom.list.length}  ${name}`;   // 換掉上一個動作留下的口令（例如「回來」）
 }
 function endRomTest(completed) {
+  const prom = !!S.rom?.prom;
   S.mode = 'posture'; setPhase('idle'); $('#romDemo').toggleAttribute('hidden', true); $('#msg').textContent = '';
+  $('#painBtn').hidden = true;
+  if (prom) { S.rom.prom = false; S.promQueue = []; renderPromBtn(); ensureModel(); }   // 回到單人模型
   $('.stage').classList.toggle('solo', S.voiceOn);
   if (completed) say('romAllDone');
-  if (S.session?.rom && Object.keys(S.session.rom).length) { saveCurrent(true); renderRom(); if (completed) showResults('arom'); }
+  if (Object.keys(S.session?.rom || {}).length || Object.keys(S.session?.prom || {}).length) { S.viewSession = S.session; saveCurrent(true); renderRom(); if (completed) showResults('arom'); }
 }
 // 對位：方向正確、此動作相關的關鍵點都入鏡、身體靜止
 function romAlignCue(det, detView, m) {
@@ -511,7 +553,7 @@ function romAlignCue(det, detView, m) {
   return null;
 }
 function stepRom(now, det, detView, vars) {
-  const m = romMove(), lang = getLang(), { keys, duration } = timeline(m);
+  const slow = S.rom.prom ? 1.5 : 1, m = romMove(), lang = getLang(), { keys, duration } = timeline(m, slow);
   let demoT = ((now - S.rom.phaseStart) / 1000) % duration;   // intro/align：示範動畫循環播放
   if (S.phase === 'intro') {
     // 等說明念完再對位；語音卡住時最多等 15 秒，流程不會停住
@@ -533,7 +575,7 @@ function stepRom(now, det, detView, vars) {
     while (S.rom.cueIdx < keys.length && keys[S.rom.cueIdx].t <= el) {
       const k = keys[S.rom.cueIdx++];
       if (!k.cue) continue;
-      const txt = cueText(m, k.cue, lang, getVoiceLevel() !== 'full');
+      const txt = cueText(m, k.cue, lang, getVoiceLevel() !== 'full', !!S.rom.prom);
       speak(txt, { interrupt: true }); $('#msg').textContent = txt;
       // 後備：若最大角度時沒拍到，口令「回來」時補拍
       if (k.cue === 'back' && !S.rom.snaps.pos) S.rom.wantSnap = 'pos'; else if (k.cue === 'back2' && !S.rom.snaps.neg) S.rom.wantSnap = 'neg';
@@ -565,7 +607,7 @@ function stepRom(now, det, detView, vars) {
     }
     if (el >= duration) finishRomRecording();
   } else if (S.phase === 'done') demoT = 0;
-  const dv = demoValueAt(m, demoT);
+  const dv = demoValueAt(m, demoT, S.rom.prom ? 1.5 : 1);
   romDemo.render(m.view, m.demo(dv), m, `${S.rom.idx + 1}/${S.rom.list.length}  ${romName(m)}`, m.arcs.map(() => dv), !!cfg.mirrorView);
 }
 function romPanel() {
@@ -585,7 +627,7 @@ function romSnap(key) {
 function startRomRecording(now) {
   crumb('rec_audio');
   if (!cfg.quietRec) beep(1046, 250);
-  S.recFrames = []; S.recStart = now; S.rom.cueIdx = 0; S.rom.live = {}; S.rom.snaps = {}; S.rom.peak = {}; S.rom.comp = null; S.rom.wantSnap = null; S.rom.lastSnapT = 0; S.runningMarked = false;
+  S.recFrames = []; S.recStart = now; S.rom.cueIdx = 0; S.rom.live = {}; S.rom.snaps = {}; S.rom.peak = {}; S.rom.comp = null; S.rom.pain = {}; S.rom.wantSnap = null; S.rom.lastSnapT = 0; S.runningMarked = false;
   S.recorder = new CanvasRecorder(canvas, 30, cfg.videoFmt);
   crumb('rec_recorder', { mime: S.recorder.mime });
   try { S.recorder.start(); } catch (e) { console.warn('recorder', e); S.recorder = null; }
@@ -602,7 +644,9 @@ async function finishRomRecording() {
     try {
       const res = analyzeRom(m, S.recFrames, { W: canvas.width, H: canvas.height, up: S.up, height_m: cfg.height_cm / 100, mass_kg: cfg.mass_kg, visThr: cfg.visThr });
       res.snapshots = S.rom.snaps; res.video = clip; res.date = new Date().toISOString();
-      S.session.rom[m.id] = res; S.viewSession = S.session;
+      res.pain = S.rom.pain;
+      if (S.rom.prom) S.session.prom[m.id] = res; else S.session.rom[m.id] = res;
+      S.viewSession = S.session;
       // 語音報告結果，例如「右肩 屈曲 165 度，伸展 48 度」
       const parts = Object.values(res.metrics).map(mt => {
         const side = mt.side === 'R' ? t('right') : mt.side === 'L' ? t('left') : '';
@@ -620,7 +664,17 @@ async function finishRomRecording() {
   if (S.rom.idx < S.rom.list.length) setTimeout(() => { if (S.mode === 'rom') enterRomIntro(true); }, 1500);
   else endRomTest(true);
 }
+/** 疼痛標記：記下當下方向（正向／反向）的角度，每個方向只記第一次（開始痛的角度） */
+function markPain() {
+  if (S.mode !== 'rom' || S.phase !== 'record') return;
+  const m = romMove(), el = (performance.now() - S.recStart) / 1000, { keys } = timeline(m, S.rom.prom ? 1.5 : 1);
+  const dir = m.neg && el >= keys.find(k => k.cue === 'neg').t ? 'neg' : 'pos';
+  if (S.rom.pain[dir]) return;
+  S.rom.pain[dir] = Object.fromEntries(m.vars.map(vd => [vd.name, S.rom.live[vd.name]?.cur]));
+  beep(440, 200); toast(`⚡ ${t('painMarked')}`);
+}
 function romCommand(cmd) {
+  if (cmd === 'pain') { markPain(); return; }
   if (cmd === 'capture') { if (S.phase === 'intro' || S.phase === 'align') { S.countdownEnd = performance.now() + 3000; S.lastCount = -1; setPhase('countdown'); } }
   else if (cmd === 'next') { if (S.phase === 'record') return; S.rom.idx++; if (S.rom.idx < S.rom.list.length) enterRomIntro(); else endRomTest(true); }
   else if (cmd === 'retake') {
@@ -856,44 +910,77 @@ $('#romAllBtn').onclick = () => { cfg.romSel = MOVES.map(m => m.id); saveCfg(); 
 $('#romNoneBtn').onclick = () => { cfg.romSel = []; saveCfg(); renderRomChecklist(); };
 
 function renderRom() {
-  const s = S.viewSession, R = s?.rom, C = S.compare?.rom;
-  const ids = R ? MOVES.map(m => m.id).filter(id => R[id]) : [];
+  const s = S.viewSession, R = s?.rom || {}, P = s?.prom || {}, C = S.compare?.rom;
+  const ids = MOVES.map(m => m.id).filter(id => R[id] || P[id]);
   if (!ids.length) { $('#romInfo').textContent = t('romNone'); $('#romTable').innerHTML = ''; $('#romAsym').innerHTML = ''; $('#romSnaps').innerHTML = ''; $('#romSel').innerHTML = ''; return; }
   $('#romInfo').textContent = `${s.subject} · ${new Date(s.date).toLocaleString()}${C ? ` · ${t('preRom')}: ${S.compare.date.slice(0, 10)}` : ''}`;
-  const f = x => (fin(x) ? x.toFixed(0) : '–');
-  const pctCell = p => `<td class="${fin(p) && p < 75 ? 'low' : fin(p) && p < 90 ? 'warn' : ''}">${fin(p) ? p.toFixed(0) + '%' : '–'}</td>`;
-  const en = getLang() === 'en';
-  const head = `<tr><th>${t('romMove')}</th><th>${t('side')}</th><th>${t('romStart')}</th><th>${t('direction')}</th><th>${t('peak')}</th><th>${t('norm')}</th><th>${t('pctNorm')}</th><th>${t('direction')}</th><th>${t('peak')}</th><th>${t('norm')}</th><th>${t('pctNorm')}</th><th>${t('romTotal')}</th><th>${t('validPct')}</th>${C ? `<th>${t('preRom')}</th><th>Δ</th>` : ''}</tr>`;
-  let nLimited = 0;
-  let rows = '';
+  const f = x => (fin(x) ? x.toFixed(0) : '–'), en = getLang() === 'en';
+  const pct = p => (fin(p) ? ` <small class="${p < 75 ? 'low' : p < 90 ? 'warn' : ''}">(${p.toFixed(0)}%)</small>` : '');
+  // 每個動作 × 側 × 方向一列：AROM 與 PROM 並排，直接看出被動比主動多了多少、哪個角度開始痛
+  const head = `<tr><th>${t('romMove')}</th><th>${t('side')}</th><th>${t('direction')}</th><th>${t('norm')}</th><th>AROM°</th><th>PROM°</th><th>${t('promGain')}</th><th>${t('painAt')}</th>${C ? `<th>${t('preRom')}</th>` : ''}</tr>`;
+  let rows = '', nLimited = 0;
   for (const id of ids) {
-    const m = MOVES.find(x => x.id === id);
-    for (const [vn, mt] of Object.entries(R[id].metrics)) {
-      const c = C?.[id]?.metrics?.[vn];
-      const compNote = mt.comp?.warn ? `<br><small class="warn">⚠ ${en ? m.comp.en : m.comp.zh} ${Math.round(mt.comp.deg)}°</small>` : '';
-      const limited = [mt.pctPos, mt.pctNeg].some(p => fin(p) && p < 90) || mt.comp?.warn;
-      if (limited) nLimited++;
-      rows += `<tr><td>${romName(m)}${compNote}${limited ? refBtn(refForMove(id)) : ''}</td><td>${mt.side ? t(mt.side === 'R' ? 'right' : 'left') : ''}</td><td>${f(mt.start)}</td><td>${en ? m.pos.en : m.pos.zh}</td><td>${f(mt.pos)}</td><td>${m.pos.norm}</td>${pctCell(mt.pctPos)}`
-        + (m.neg ? `<td>${en ? m.neg.en : m.neg.zh}</td><td>${f(-mt.neg)}</td><td>${m.neg.norm}</td>${pctCell(mt.pctNeg)}` : '<td></td><td></td><td></td><td></td>')
-        + `<td>${f(mt.rom)}</td><td>${mt.validPct}</td>${C ? `<td>${f(c?.rom)}</td><td>${fin(c?.rom) ? (mt.rom - c.rom >= 0 ? '+' : '') + (mt.rom - c.rom).toFixed(0) : '–'}</td>` : ''}</tr>`;
+    const m = MOVES.find(x => x.id === id), A = R[id], Pp = P[id], queued = S.promQueue.includes(id);
+    const vars = Object.keys((A || Pp).metrics);
+    let first = true;
+    for (const vn of vars) {
+      const am = A?.metrics?.[vn], pm = Pp?.metrics?.[vn], c = C?.[id]?.metrics?.[vn];
+      for (const dir of m.neg ? ['pos', 'neg'] : ['pos']) {
+        const d = dir === 'pos' ? m.pos : m.neg, val = mt => (mt ? (dir === 'pos' ? mt.pos : -mt.neg) : NaN), pc = mt => (mt ? (dir === 'pos' ? mt.pctPos : mt.pctNeg) : NaN);
+        const av = val(am), pv = val(pm), gain = pv - av;
+        const pains = [A?.pain?.[dir]?.[vn], Pp?.pain?.[dir]?.[vn]].map(x => (fin(x) ? Math.abs(x) : NaN));
+        const painTxt = [fin(pains[0]) ? `A ${f(pains[0])}` : '', fin(pains[1]) ? `P ${f(pains[1])}` : ''].filter(Boolean).join(' / ') || '–';
+        const limited = (fin(pc(am)) && pc(am) < 90) || am?.comp?.warn || fin(pains[0]);
+        if (limited) nLimited++;
+        let nameCell = '';
+        if (first) {
+          const compNote = am?.comp?.warn ? `<br><small class="warn">⚠ ${en ? m.comp.en : m.comp.zh} ${Math.round(am.comp.deg)}°</small>` : '';
+          const anyLimited = vars.some(v2 => [A?.metrics?.[v2]?.pctPos, A?.metrics?.[v2]?.pctNeg].some(p => fin(p) && p < 90)) || am?.comp?.warn || (A?.pain && Object.keys(A.pain).length);
+          nameCell = `${romName(m)}${compNote}${anyLimited ? refBtn(refForMove(id)) : ''}<br><button type="button" class="promadd ${queued ? 'on' : ''}" data-prom="${id}">${t(queued ? 'promQueued' : 'promAdd')}</button>`;
+          first = false;
+        }
+        rows += `<tr class="${nameCell ? 'grp' : ''}"><td>${nameCell}</td><td>${am?.side || pm?.side ? t((am || pm).side === 'R' ? 'right' : 'left') : ''}</td><td>${en ? d.en : d.zh}</td><td>${d.norm}</td>`
+          + `<td>${f(av)}${pct(pc(am))}</td><td>${fin(pv) ? `<b>${f(pv)}</b>${pct(pc(pm))}` : '–'}</td>`
+          + `<td class="${fin(gain) && gain >= 10 ? 'warn' : ''}">${fin(gain) ? (gain >= 0 ? '+' : '') + f(gain) : '–'}</td><td>${painTxt}</td>`
+          + `${C ? `<td>${f(val(c))}</td>` : ''}</tr>`;
+      }
     }
   }
-  $('#romTable').innerHTML = `<table class="tbl">${head}${rows}</table>${nLimited >= 2 ? `<p class="hint">${t('capsularHint')}${refBtn(CAPSULAR)}</p>` : ''}<p class="hint">${t('romRefNote')}</p>`;
+  $('#romTable').innerHTML = `<table class="tbl romtbl">${head}${rows}</table>${nLimited >= 2 ? `<p class="hint">${t('capsularHint')}${refBtn(CAPSULAR)}</p>` : ''}<p class="hint">${t('promNote')}</p><p class="hint">${t('romRefNote')}</p>`;
   const asym = asymmetry(R);
-  $('#romAsym').innerHTML = asym.length ? `<table class="tbl"><tr><th>${t('romMove')}</th><th>${t('right')}</th><th>${t('left')}</th><th>${t('asymPct')}</th></tr>${asym.map(a => `<tr><td>${a.label}${a.asymPct > 15 ? refBtn(refForAsym(a.label)) : ''}</td><td>${f(a.R)}</td><td>${f(a.L)}</td><td class="${a.asymPct > 15 ? 'low' : a.asymPct > 10 ? 'warn' : ''}">${a.asymPct.toFixed(0)}%</td></tr>`).join('')}</table>` : '';
+  $('#romAsym').innerHTML = asym.length ? `<table class="tbl"><tr><th>${t('romMove')}</th><th>${t('right')}</th><th>${t('left')}</th><th>${t('asymPct')}</th></tr>${asym.map(x => `<tr><td>${x.label}${x.asymPct > 15 ? refBtn(refForAsym(x.label)) : ''}</td><td>${f(x.R)}</td><td>${f(x.L)}</td><td class="${x.asymPct > 15 ? 'low' : x.asymPct > 10 ? 'warn' : ''}">${x.asymPct.toFixed(0)}%</td></tr>`).join('')}</table>` : '';
   const prev = $('#romSel').value;
   $('#romSel').innerHTML = ids.map(id => `<option value="${id}" ${id === prev ? 'selected' : ''}>${romName(MOVES.find(x => x.id === id))}</option>`).join('');
-  $('#romSnaps').innerHTML = ids.flatMap(id => ['pos', 'neg'].filter(k => R[id].snapshots?.[k]).map(k => {
+  $('#romSnaps').innerHTML = ids.flatMap(id => {
     const m = MOVES.find(x => x.id === id);
-    return `<figure><img src="${R[id].snapshots[k]}" alt=""><figcaption>${romSnapCaption(m, R[id], k, en)}</figcaption></figure>`;
-  })).join('');
+    return [['AROM', R[id]], ['PROM', P[id]]].flatMap(([lab, res]) => ['pos', 'neg'].filter(k => res?.snapshots?.[k]).map(k =>
+      `<figure><img src="${res.snapshots[k]}" alt=""><figcaption>${lab} · ${romSnapCaption(m, res, k, en)}</figcaption></figure>`));
+  }).join('');
   drawRomChart();
 }
+// 「＋ PROM」：加入／移出待測清單；④ 進行測試會出現「開始 PROM」按鈕
+function renderPromBtn() {
+  const n = S.promQueue.length, b = $('#promBtn');
+  b.hidden = !n; b.textContent = `${t('btnProm')}（${n}）`; b.disabled = !S.stream;
+}
+$('#romTable').addEventListener('click', e => {
+  const b = e.target.closest('.promadd'); if (!b) return;
+  const id = b.dataset.prom, i = S.promQueue.indexOf(id);
+  if (S.promSession && S.promSession !== S.viewSession) S.promQueue = [];   // 換了一筆紀錄：重新累計
+  S.promSession = S.viewSession;
+  if (i >= 0 && S.promQueue.includes(id)) S.promQueue.splice(S.promQueue.indexOf(id), 1); else S.promQueue.push(id);
+  renderPromBtn(); renderRom();
+  if (S.promQueue.length) toast(`${t('promQueuedToast')}（${S.promQueue.length}）`);
+});
+$('#promBtn').onclick = startPromTest;
+$('#painBtn').onclick = markPain;
 function drawRomChart() {
-  const R = S.viewSession?.rom, id = $('#romSel').value; if (!R?.[id]) return;
-  const res = R[id], en = getLang() === 'en', sideName = vn => (/^R_/.test(vn) ? t('right') : /^L_/.test(vn) ? t('left') : '');
+  const id = $('#romSel').value, res = S.viewSession?.rom?.[id] || S.viewSession?.prom?.[id]; if (!res) return;
+  const en = getLang() === 'en', sideName = vn => (/^R_/.test(vn) ? t('right') : /^L_/.test(vn) ? t('left') : '');
   const unit = res.ref === 'start' ? (en ? 'angle vs start (°)' : '相對起始角度 (°)') : (en ? 'angle vs plumb / neutral (°)' : '角度（相對鉛垂／中立位）(°)');
   const series = Object.entries(res.series).map(([vn, y]) => ({ label: `${sideName(vn)}${en ? ' angle' : '角度'}`, t: res.t, y }));
+  const pr = S.viewSession?.prom?.[id];
+  if (pr) for (const [vn, y] of Object.entries(pr.series)) if (series.length < 3) series.push({ label: `PROM ${sideName(vn)}`, t: pr.t, y, dash: true });
   const c = S.compare?.rom?.[id];
   if (c && series.length < 3) { const [vn, y] = Object.entries(c.series)[0]; series.push({ label: `${sideName(vn)} (${S.compare.date.slice(0, 10)})`, t: c.t, y, dash: true }); }
   timeSeries($('#romChart'), series, unit);
@@ -906,7 +993,7 @@ $('#romVideoBtn').onclick = () => (S.viewSession ? downloadVideos(S.viewSession)
 $('#romPngBtn').onclick = async () => { const u = chartPNG($('#romChart')); if (u) download(await dataURLtoBlob(u), `rom_${$('#romSel').value}.png`); };
 // AROM 報告與姿勢報告分開
 $('#romReportBtn').onclick = () => {
-  const s = S.viewSession; if (!s?.rom || !Object.keys(s.rom).length) return toast(t('romNone'));
+  const s = S.viewSession; if (!Object.keys(s?.rom || {}).length && !Object.keys(s?.prom || {}).length) return toast(t('romNone'));
   const blob = new Blob([reportHTML(s, {}, S.compare, null, 'AROM')], { type: 'text/html' });
   download(blob, `report_${fileBase(s, 'AROM')}.html`);
   const w = window.open(URL.createObjectURL(blob), '_blank'); if (!w) toast('HTML downloaded');

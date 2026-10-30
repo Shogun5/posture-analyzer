@@ -163,3 +163,13 @@ td .reflink { display: block; width: fit-content; }
 .fbdlg label { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
 .fbdlg label.chk { flex-direction: row; align-items: center; gap: 8px; }
 .fbdlg textarea { font: inherit; }
+
+/* PROM */
+button.prom { background: #7c3aed; }
+.painbtn { background: #b91c1c; color: #fff; border-color: transparent; font-weight: 700; }
+.promadd { margin-top: 4px; min-height: 28px; padding: 2px 10px; font-size: 12px; border-radius: 999px; }
+.promadd.on { background: #7c3aed; color: #fff; border-color: transparent; }
+.romtbl tr.grp td { border-top: 2px solid var(--line); }
+.romtbl td { white-space: normal; vertical-align: top; }
+.romtbl td small.low { color: var(--bad); font-weight: 700; }
+.romtbl td small.warn { color: var(--warn); font-weight: 700; }

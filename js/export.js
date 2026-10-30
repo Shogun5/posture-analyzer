@@ -49,8 +49,8 @@ export function sessionCSV(s, includeRawLandmarks = false) {
       for (const k of ['mean', 'sd', 'max', 'min', 'rom', 'tmax', 'tmin']) L.push(`${pre},summary,,,${name}__${k},${num(k === 'sd' ? meanSD(r.filt[name]).sd : st[k])}`);
   }
   // ROM 測試：view 欄 = rom_<動作 id>；raw = 原始幀角度；filtered = 濾波後角度（相對鉛垂/中立位；頸屈伸相對起始姿勢）
-  for (const [id, r] of Object.entries(s.rom || {})) {
-    const pre = `${esc(s.subject)},${s.date},rom_${id}`;
+  for (const [kind, set] of [['rom', s.rom], ['prom', s.prom]]) for (const [id, r] of Object.entries(set || {})) {
+    const pre = `${esc(s.subject)},${s.date},${kind}_${id}`;
     for (const [vn, arr] of Object.entries(r.raw)) arr.forEach((v, k) => L.push(`${pre},raw,${k},${num(r.tRaw[k])},${vn},${num(v)}`));
     for (const [vn, arr] of Object.entries(r.series)) arr.forEach((v, k) => L.push(`${pre},filtered,${k},${num(r.t[k])},${vn.replace(/_deg$/, r.ref === 'start' ? '_rel_start_deg' : '_abs_deg')},${num(v)}`));
     for (const [vn, mt] of Object.entries(r.metrics)) {
@@ -59,6 +59,7 @@ export function sessionCSV(s, includeRawLandmarks = false) {
         `${pre},summary,,,${b}__neg_peak_deg,${num(mt.neg)}`, `${pre},summary,,,${b}__neg_t_s,${num(mt.tNeg)}`, `${pre},summary,,,${b}__rom_deg,${num(mt.rom)}`,
         `${pre},summary,,,${b}__pos_pct_norm,${num(mt.pctPos)}`, `${pre},summary,,,${b}__neg_pct_norm,${num(mt.pctNeg)}`, `${pre},summary,,,${b}__valid_pct,${num(mt.validPct)}`);
       if (mt.comp) L.push(`${pre},summary,,,${b}__comp_deg,${num(mt.comp.deg)}`);
+      for (const dir of ['pos', 'neg']) if (Number.isFinite(r.pain?.[dir]?.[vn])) L.push(`${pre},summary,,,${b}__${dir}_pain_deg,${num(r.pain[dir][vn])}`);
     }
   }
   return '﻿' + L.join('\n'); // BOM 讓 Excel 正確顯示中文
@@ -76,27 +77,38 @@ export function downloadVideos(s) {
 
 /** 報告中的 ROM 段落 */
 function romSection(s, compare) {
-  const R = s.rom; if (!R || !Object.keys(R).length) return '';
+  const R = s.rom || {}, P = s.prom || {};
+  if (!Object.keys(R).length && !Object.keys(P).length) return '';
   const en = getLang() === 'en', f = x => (Number.isFinite(x) ? x.toFixed(0) : '–'), C = compare?.rom;
+  const pc = p => (Number.isFinite(p) ? ` (${p.toFixed(0)}%)` : '');
   let rows = '';
   for (const m of MOVES) {
-    const r = R[m.id]; if (!r) continue;
-    for (const [vn, mt] of Object.entries(r.metrics)) {
-      const c = C?.[m.id]?.metrics?.[vn];
-      const compNote = mt.comp?.warn ? `<br><small style="color:#b45309">⚠ ${escH(en ? m.comp.en : m.comp.zh)} ${f(mt.comp.deg)}°</small>` : '';
-      rows += `<tr><td>${escH(en ? m.en : m.zh)}${compNote}</td><td>${mt.side}</td><td>${f(mt.start)}°</td><td>${escH(en ? m.pos.en : m.pos.zh)} ${f(mt.pos)}° / ${m.pos.norm}° (${f(mt.pctPos)}%)</td>`
-        + `<td>${m.neg ? `${escH(en ? m.neg.en : m.neg.zh)} ${f(-mt.neg)}° / ${m.neg.norm}° (${f(mt.pctNeg)}%)` : ''}</td><td>${f(mt.rom)}</td><td>${mt.validPct}</td>${C ? `<td>${f(c?.rom)}</td>` : ''}</tr>`;
+    const A = R[m.id], Pp = P[m.id]; if (!A && !Pp) continue;
+    let first = true;
+    for (const vn of Object.keys((A || Pp).metrics)) {
+      const am = A?.metrics?.[vn], pm = Pp?.metrics?.[vn], c = C?.[m.id]?.metrics?.[vn];
+      for (const dir of m.neg ? ['pos', 'neg'] : ['pos']) {
+        const d = dir === 'pos' ? m.pos : m.neg, val = mt => (mt ? (dir === 'pos' ? mt.pos : -mt.neg) : NaN), pct = mt => (mt ? (dir === 'pos' ? mt.pctPos : mt.pctNeg) : NaN);
+        const av = val(am), pv = val(pm), gain = pv - av;
+        const pains = [A?.pain?.[dir]?.[vn], Pp?.pain?.[dir]?.[vn]].map(x => (Number.isFinite(x) ? Math.abs(x) : NaN));
+        const painTxt = [Number.isFinite(pains[0]) ? `A ${f(pains[0])}` : '', Number.isFinite(pains[1]) ? `P ${f(pains[1])}` : ''].filter(Boolean).join(' / ') || '–';
+        const compNote = first && am?.comp?.warn ? `<br><small style="color:#b45309">⚠ ${escH(en ? m.comp.en : m.comp.zh)} ${f(am.comp.deg)}°</small>` : '';
+        rows += `<tr${first ? ' style="border-top:2px solid #94a3b8"' : ''}><td>${first ? escH(en ? m.en : m.zh) + compNote : ''}</td><td>${(am || pm)?.side || ''}</td><td>${escH(en ? d.en : d.zh)}</td><td>${d.norm}</td>`
+          + `<td>${f(av)}${pc(pct(am))}</td><td>${Number.isFinite(pv) ? `<b>${f(pv)}</b>${pc(pct(pm))}` : '–'}</td><td${Number.isFinite(gain) && gain >= 10 ? ' style="color:#b45309;font-weight:700"' : ''}>${Number.isFinite(gain) ? (gain >= 0 ? '+' : '') + f(gain) : '–'}</td><td>${painTxt}</td>${C ? `<td>${f(val(c))}</td>` : ''}</tr>`;
+        first = false;
+      }
     }
   }
-  const asym = asymmetry(R).map(a => `<tr><td>${a.label}</td><td>${f(a.R)}</td><td>${f(a.L)}</td><td>${a.asymPct.toFixed(0)}%</td></tr>`).join('');
-  // 每個動作的兩個方向（正向／反向最大角度時的照片）並排，方便檢查量測
-  const snaps = MOVES.filter(m => R[m.id]?.snapshots).map(m => {
-    const figs = ['pos', 'neg'].filter(k => R[m.id].snapshots[k]).map(k => `<figure style="display:inline-block;margin:4px;width:240px;vertical-align:top"><img src="${R[m.id].snapshots[k]}" style="width:100%"><figcaption style="font-size:11px">${escH(romSnapCaption(m, R[m.id], k, en))}</figcaption></figure>`).join('');
+  const asym = asymmetry(R).map(x => `<tr><td>${x.label}</td><td>${f(x.R)}</td><td>${f(x.L)}</td><td>${x.asymPct.toFixed(0)}%</td></tr>`).join('');
+  // 每個動作：AROM／PROM 兩個方向在最大角度時的照片並排，方便檢查量測
+  const fig = (lab, m, res, k) => `<figure style="display:inline-block;margin:4px;width:220px;vertical-align:top"><img src="${res.snapshots[k]}" style="width:100%"><figcaption style="font-size:11px">${lab} · ${escH(romSnapCaption(m, res, k, en))}</figcaption></figure>`;
+  const snaps = MOVES.map(m => {
+    const figs = [['AROM', R[m.id]], ['PROM', P[m.id]]].flatMap(([lab, res]) => ['pos', 'neg'].filter(k => res?.snapshots?.[k]).map(k => fig(lab, m, res, k))).join('');
     return figs ? `<div style="page-break-inside:avoid">${figs}</div>` : '';
   }).join('');
-  return `<section><h2>AROM</h2><table><tr><th>${t('romMove')}</th><th>${t('side')}</th><th>${t('romStart')}</th><th>+ (${t('norm')})</th><th>− (${t('norm')})</th><th>${t('romTotal')}</th><th>${t('validPct')}</th>${C ? `<th>${t('preRom')}</th>` : ''}</tr>${rows}</table>
+  return `<section><h2>${Object.keys(P).length ? 'AROM / PROM' : 'AROM'}</h2><table><tr><th>${t('romMove')}</th><th>${t('side')}</th><th>${t('direction')}</th><th>${t('norm')}</th><th>AROM°</th><th>PROM°</th><th>${t('promGain')}</th><th>${t('painAt')}</th>${C ? `<th>${t('preRom')}</th>` : ''}</tr>${rows}</table>
     ${asym ? `<h3>${t('asym')}</h3><table><tr><th></th><th>${t('right')}</th><th>${t('left')}</th><th>${t('asymPct')}</th></tr>${asym}</table>` : ''}
-    <p class="qc">${t('romRefNote')}</p>${snaps}</section>`;
+    ${Object.keys(P).length ? `<p class="qc">${t('promNote')}</p>` : ''}<p class="qc">${t('romRefNote')}</p>${snaps}</section>`;
 }
 
 const f2 = x => (Number.isFinite(x) ? x.toFixed(1) : '–');

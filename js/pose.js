@@ -11,13 +11,13 @@ export const MODEL_URLS = {
 
 let fileset = null;
 
-/** 建立 PoseLandmarker（VIDEO 模式、單人）。delegate='GPU' 時先試 GPU，失敗退回 CPU。 */
-export async function createPose(variant = 'heavy', delegate = 'GPU') {
+/** 建立 PoseLandmarker（VIDEO 模式）。numPoses：平常 1 人；PROM 時 2 人（受測者＋協助者）。delegate='GPU' 時先試 GPU，失敗退回 CPU。 */
+export async function createPose(variant = 'heavy', delegate = 'GPU', numPoses = 1) {
   fileset ??= await FilesetResolver.forVisionTasks(WASM_URL);
   const opts = delegate => ({
     baseOptions: { modelAssetPath: MODEL_URLS[variant], delegate },
     runningMode: 'VIDEO',
-    numPoses: 1,                       // 畫面中單人
+    numPoses,
     minPoseDetectionConfidence: 0.5,
     minPosePresenceConfidence: 0.5,
     minTrackingConfidence: 0.5,
@@ -35,7 +35,10 @@ export async function createPose(variant = 'heavy', delegate = 'GPU') {
 export function detect(landmarker, source, tsMs, W = source.width, H = source.height) {
   const r = landmarker.detectForVideo(source, tsMs);
   if (!r.landmarks?.length) return null;
-  const lm = r.landmarks[0].map(p => [p.x * W, p.y * H, p.z, p.visibility ?? 0]);
-  const wlm = r.worldLandmarks?.[0]?.map(p => [p.x, p.y, p.z, p.visibility ?? 0]) ?? null;
-  return { lm, wlm, norm: r.landmarks[0].map(p => [p.x, p.y, p.z, p.visibility ?? 0]) };
+  const all = r.landmarks.map((L, k) => ({
+    lm: L.map(p => [p.x * W, p.y * H, p.z, p.visibility ?? 0]),
+    wlm: r.worldLandmarks?.[k]?.map(p => [p.x, p.y, p.z, p.visibility ?? 0]) ?? null,
+    norm: L.map(p => [p.x, p.y, p.z, p.visibility ?? 0]),
+  }));
+  return { ...all[0], all };
 }
