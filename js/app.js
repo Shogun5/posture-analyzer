@@ -17,7 +17,7 @@ import { loadModule, wrapModule } from './ectmodule.js';
 import { renderPhoto, composeBoard, meanSDTable, varLabel } from './posturecard.js';
 import { DEFAULT_QUAD, drawFloorGuide } from './floorguide.js';
 
-export const APP_VERSION = '1.6.0'; // 與 sw.js 的 CACHE 版本一起更新
+export const APP_VERSION = '1.6.1'; // 與 sw.js 的 CACHE 版本一起更新
 
 const $ = s => document.querySelector(s);
 const fin = Number.isFinite;
@@ -93,24 +93,42 @@ async function startCamera() {
   if (!S.user) return;          // 未通過登入驗證不得開啟相機
   unlockAudio();
   if (!window.isSecureContext) { toast(t('needHttps')); return; }
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
   try {
+    // 先完整釋放舊鏡頭：Windows 在舊串流還沒放掉時開另一顆（或同一顆）常出現「Could not start video source」
+    const hadStream = !!S.stream;
     S.stream?.getTracks().forEach(tr => tr.stop());
+    video.srcObject = null; S.stream = null;
+    if (hadStream) await sleep(400);
     crumb('camera');
     const h = +cfg.res;
     const size = { height: { ideal: h }, width: { ideal: Math.round(h * 16 / 9) }, frameRate: { ideal: 30, max: 30 } };
     const constraints = mode => ({ audio: false, video: { facingMode: { [mode]: cfg.facing }, ...size } });
-    S.stream = null;
-    // 指定了某一顆鏡頭（外接 USB 鏡頭等）：用 deviceId；拔掉了就退回前/後鏡頭
+    // 指定了某一顆鏡頭（外接 USB 鏡頭等）：用 deviceId。
+    // 開不起來（NotReadableError，鏡頭忙碌或不支援要求的解析度）→ 等一下、不指定解析度再試；拔掉了就退回前/後鏡頭
     if (cfg.deviceId) {
-      try { S.stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { deviceId: { exact: cfg.deviceId }, ...size } }); }
-      catch (e) { if (e.name !== 'OverconstrainedError' && e.name !== 'NotFoundError') throw e; toast(t('camMissing')); cfg.deviceId = ''; saveCfg(); }
+      const tries = [{ deviceId: { exact: cfg.deviceId }, ...size }, { deviceId: { exact: cfg.deviceId } }, { deviceId: { exact: cfg.deviceId } }];
+      let lastErr = null;
+      for (let i = 0; i < tries.length && !S.stream; i++) {
+        try { S.stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: tries[i] }); }
+        catch (e) {
+          lastErr = e;
+          if (e.name === 'NotFoundError') break;
+          if (e.name !== 'NotReadableError' && e.name !== 'OverconstrainedError' && e.name !== 'AbortError') throw e;
+          await sleep(600);
+        }
+      }
+      if (!S.stream) {
+        if (lastErr?.name === 'NotFoundError' || lastErr?.name === 'OverconstrainedError') { toast(t('camMissing')); cfg.deviceId = ''; saveCfg(); }
+        else { toast(t('camBusy')); $('#msg').textContent = t('camBusy'); listCameras(); crumb('idle'); setCamButton(false); return; }
+      }
     }
     // 先要求指定鏡頭（exact）；只有一顆鏡頭的裝置（筆電）退回 ideal
     if (!S.stream) {
       try { S.stream = await navigator.mediaDevices.getUserMedia(constraints('exact')); }
       catch (e) { if (e.name !== 'OverconstrainedError' && e.name !== 'NotFoundError') throw e; S.stream = await navigator.mediaDevices.getUserMedia(constraints('ideal')); }
     }
-    video.srcObject = S.stream;
+    video.srcObject = S.stream; $('#msg').textContent = '';
     listCameras();                 // 取得權限後才看得到鏡頭名稱
     video.setAttribute('playsinline', ''); video.muted = true;    // iOS 必要
     await video.play();
@@ -119,7 +137,7 @@ async function startCamera() {
     crumb('live');
     if (!S.looping) { S.looping = true; requestAnimationFrame(loop); }
     setCamButton(true);
-  } catch (e) { crumb('idle'); toast(t('camErr') + e.message); console.error(e); }
+  } catch (e) { crumb('idle'); const msg = e.name === 'NotReadableError' ? t('camBusy') : t('camErr') + e.message; toast(msg); $('#msg').textContent = msg; console.error(e); }
 }
 
 /** 鏡頭選單：自動（前/後鏡頭）＋ 每一顆偵測到的鏡頭（含外接 USB 鏡頭） */
