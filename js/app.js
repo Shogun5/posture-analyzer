@@ -1,5 +1,5 @@
 // app.js — 主控制：相機、即時分析迴圈、四方向引導拍攝狀態機、語音/手勢控制、校正、結果/歷史/設定 UI
-import { t, v, setLang, getLang } from './i18n.js';
+import { t, v, setLang, getLang, setVoiceLevel, getVoiceLevel } from './i18n.js';
 import { createPose, detect, MP_VERSION } from './pose.js';
 import { VIEWS, isSag, makeTransform, computeVars, computeCOM, detectView, enforceLR, upFromGravity, processRecording, EYE_HEIGHT_RATIO } from './biomech.js';
 import { assessPosture, DEFAULT_THR } from './posture.js';
@@ -16,7 +16,7 @@ import { requireAuth, signOut, useRedirectMode, redirectMode } from './auth.js';
 import { loadModule, wrapModule } from './ectmodule.js';
 import { renderPhoto, composeBoard, meanSDTable, varLabel } from './posturecard.js';
 
-export const APP_VERSION = '1.4.1'; // 與 sw.js 的 CACHE 版本一起更新
+export const APP_VERSION = '1.4.2'; // 與 sw.js 的 CACHE 版本一起更新
 
 const $ = s => document.querySelector(s);
 const fin = Number.isFinite;
@@ -25,7 +25,7 @@ const fin = Number.isFinite;
 const DEF = {
   lang: 'zh', subject: 'S01', height_cm: 170, mass_kg: 65, model: 'heavy', facing: 'environment', res: '720',
   captureSec: 5, countdownSec: 5, visThr: 0.5, mirrorFix: false, autoCapture: true, gesture: true, rawLm: false, thr: DEFAULT_THR,
-  delegate: 'GPU', videoFmt: 'auto',
+  delegate: 'GPU', videoFmt: 'auto', voiceLevel: 'short',
 };
 let cfg = loadCfg();
 function loadCfg() {
@@ -166,7 +166,7 @@ function loop(now) {
   // 不需鏡像修正時直接把 video 交給模型（MediaPipe 的標準用法）；需要時才用翻轉後的畫布
   try { det = detect(S.pose, cfg.mirrorFix ? canvas : video, now, W, H); } catch (e) { console.warn(e); }
   const view = S.mode === 'rom' ? romMove().view : curView();
-  const detView = det ? detectView(det.norm) : null;
+  const detView = det ? detectView(det.lm) : null;   // 像素座標：正規化座標的 x/y 比例不同，橫向畫面會把正面誤判為側面
   let lm = det?.lm ?? null, swapped = false;
   if (lm) ({ lm, swapped } = enforceLR(lm, view));
 
@@ -261,12 +261,7 @@ function alignmentCue(det, detView) {
   }
   // 方向：正/背面只要求「正對或背對」（臉沒偵測到時正面常被誤判為背面，左右由 enforceLR 修正）；
   // 側面才分左右。若同一個轉身提示持續 6 秒仍不符，視為偵測誤差直接放行
-  const planeOK = detView && isSag(detView) === isSag(view);
-  const dirOK = planeOK && (!isSag(view) || detView === view);
-  if (!dirOK) {
-    S.turnSince ||= performance.now();
-    if (!planeOK || performance.now() - S.turnSince < 6000) return `turn_${view}`;
-  } else S.turnSince = 0;
+  if (!viewOK(detView, view)) return `turn_${view}`;
   // 細部轉向：身體朝向與目標差 20–60°（> 60° 多半是背面左右標反，不採用）；同一提示超過 8 秒就放行
   const yaw = bodyYaw(det.wlm);
   if (fin(yaw)) {
@@ -286,6 +281,13 @@ function alignmentCue(det, detView) {
   const xs = h.map(e => (e.n[23][0] + e.n[24][0]) / 2), ys = h.map(e => (e.n[23][1] + e.n[24][1]) / 2);
   if (Math.max(...xs) - Math.min(...xs) > 0.012 || Math.max(...ys) - Math.min(...ys) > 0.012) return 'still';
   return null;
+}
+// 方向是否可接受：正/背面只要求「正對或背對」；側面分左右。方向提示持續 6 秒仍不符就放行（偵測誤差時不卡住）
+function viewOK(detView, view) {
+  const ok = detView && isSag(detView) === isSag(view) && (!isSag(view) || detView === view);
+  if (ok) { S.turnSince = 0; return true; }
+  S.turnSince ||= performance.now();
+  return performance.now() - S.turnSince > 6000;
 }
 // 舉手手勢：任一手腕高於鼻子持續 1.2 s
 function gestureFired(det, now) {
@@ -413,8 +415,11 @@ function enterRomIntro(queue = false) {
   const m = romMove();
   S.viewIdx = VIEWS.indexOf(m.view);
   setPhase('intro'); S.rom.phaseStart = performance.now();
-  const intro = getLang() === 'en' ? m.introEn : m.introZh;
-  speak(`${S.rom.idx + 1}. ${romName(m)}。${intro}`, { interrupt: !queue });
+  S.turnSince = 0;
+  // 簡易：只講動作名稱；完整：編號 + 名稱 + 說明
+  const full = getVoiceLevel() === 'full', en = getLang() === 'en';
+  const name = romName(m).replace(/（.*?）|\(.*?\)/g, '').replace(/[／/]/g, en ? ' and ' : '、');
+  speak(full ? `${S.rom.idx + 1}. ${name}。${en ? m.introEn : m.introZh}` : `${name}。`, { interrupt: !queue });
 }
 function endRomTest(completed) {
   S.mode = 'posture'; setPhase('idle'); $('#romDemo').toggleAttribute('hidden', true); $('#msg').textContent = '';
@@ -426,7 +431,7 @@ function romAlignCue(det, detView, m) {
   if (!det) return 'noPerson';
   const n = det.norm;
   if (m.lm.some(i => n[i][3] < cfg.visThr || n[i][0] < 0.01 || n[i][0] > 0.99 || n[i][1] < 0.01 || n[i][1] > 0.99)) return 'backUp';
-  if (detView !== m.view) return `turn_${m.view}`;
+  if (!viewOK(detView, m.view)) return `turn_${m.view}`;
   const h = S.hist.slice(-15);
   if (h.length < 10) return 'still';
   const xs = h.map(e => (e.n[23][0] + e.n[24][0]) / 2), ys = h.map(e => (e.n[23][1] + e.n[24][1]) / 2);
@@ -454,7 +459,7 @@ function stepRom(now, det, detView, vars) {
     while (S.rom.cueIdx < keys.length && keys[S.rom.cueIdx].t <= el) {
       const k = keys[S.rom.cueIdx++];
       if (!k.cue) continue;
-      const txt = cueText(m, k.cue, lang);
+      const txt = cueText(m, k.cue, lang, getVoiceLevel() !== 'full');
       speak(txt, { interrupt: true }); $('#msg').textContent = txt;
       if (k.cue === 'back') romSnap('pos'); else if (k.cue === 'back2') romSnap('neg');
     }
@@ -869,7 +874,8 @@ function showTab(name) {
 }
 document.querySelector('.tabs').addEventListener('click', e => { const b = e.target.closest('button'); if (b) showTab(b.dataset.tab); });
 function applyLang() {
-  setLang(cfg.lang);
+  setLang(cfg.lang); setVoiceLevel(cfg.voiceLevel);
+  $('#voiceLevelBtn').textContent = t(cfg.voiceLevel === 'full' ? 'btnVlFull' : 'btnVlShort');
   $('#langBtn').textContent = cfg.lang === 'zh' ? 'EN' : '中文';
   $('#voiceBtn').textContent = t(S.voiceOn ? 'btnVoiceOn' : 'btnVoiceOff');
   renderChips();
@@ -904,6 +910,8 @@ $('#nextBtn').onclick = () => command('next');
 $('#retakeBtn').onclick = () => command('retake');
 $('#stopBtn').onclick = () => command('stop');
 $('#plumbSensorBtn').onclick = plumbSensor;
+// 語音提示：簡易 ↔ 完整
+$('#voiceLevelBtn').onclick = () => { cfg.voiceLevel = cfg.voiceLevel === 'full' ? 'short' : 'full'; saveCfg(); applyLang(); fillSettings(); toast($('#voiceLevelBtn').textContent); };
 $('#plumbManualBtn').onclick = plumbManual;
 $('#plumbResetBtn').onclick = () => { S.up = [0, -1]; S.plumbMode = 'none'; };
 function startVoice() {

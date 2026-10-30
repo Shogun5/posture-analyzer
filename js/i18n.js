@@ -61,6 +61,7 @@ export const STR = {
     stage_process: '資料處理', stage_results: '顯示結果', stage_save: '儲存',
     btnBoard: '下載四面照片', advChart: '進階：記錄期間的變化曲線（研究用）', resNote: '照片與表格數值 = 記錄期間的平均值；完整統計請下載 CSV',
     notCaptured: '尚未拍攝', noPhoto: '沒有照片', postureTable: '姿勢指標（平均 ± SD）',
+    voiceLevel: '語音提示', vlShort: '簡易（短指令）', vlFull: '完整（詳細說明）', btnVlShort: '語音：簡易', btnVlFull: '語音：完整',
     holdStill: '站穩不動', nextView: '下一面：', allDoneShort: '四面完成 ✓\n請到「結果」查看', voiceHintShort: '語音模式\n站好後說「開始」',
   },
   en: {
@@ -124,6 +125,7 @@ export const STR = {
     stage_process: 'processing', stage_results: 'showing results', stage_save: 'saving',
     btnBoard: 'Download 4-view photos', advChart: 'Advanced: time series during recording (research)', resNote: 'Photo and table values = mean over the recording; full statistics in the CSV',
     notCaptured: 'Not captured', noPhoto: 'No photo', postureTable: 'Posture measures (mean ± SD)',
+    voiceLevel: 'Voice prompts', vlShort: 'Brief (short commands)', vlFull: 'Full (detailed)', btnVlShort: 'Prompts: brief', btnVlFull: 'Prompts: full',
     holdStill: 'hold still', nextView: 'Next: ', allDoneShort: 'All 4 views done ✓\nSee Results', voiceHintShort: 'Voice mode\nStand in place and say “start”',
   },
 };
@@ -157,8 +159,8 @@ export const VOICE = {
     recording: '開始，不要動。',
     viewDone: '完成。',
     allDone: '四面完成，謝謝。',
-    romIntro: '關節活動度測試開始。每個動作請先看畫面右上角的示範，聽口令做到最大範圍，停住，再慢慢回來。',
-    romAllDone: '關節活動度測試完成，謝謝，可以休息了。',
+    romIntro: '關節活動度測試。看示範，跟口令做。',
+    romAllDone: '測試完成，謝謝。',
     deg: '度',
     nums: ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十'],
   },
@@ -188,10 +190,50 @@ export const VOICE = {
     recording: 'Recording, hold still.',
     viewDone: 'Done.',
     allDone: 'All four views done. Thank you.',
-    romIntro: 'Range of motion test. For each movement, watch the demo at the top right, follow the cues to your full range, hold, then slowly come back.',
-    romAllDone: 'Range of motion test complete. Thank you, you may relax.',
+    romIntro: 'Range of motion test. Watch the demo and follow the cues.',
+    romAllDone: 'Test complete. Thank you.',
     deg: 'degrees',
     nums: ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'],
+  },
+};
+
+// 完整版語音（設定「語音提示：完整」時使用；沒有列出的 key 沿用上面的簡易版）
+export const VOICE_FULL = {
+  zh: {
+    intro: '歡迎使用姿勢分析。請站在距離鏡頭約三公尺處，讓頭到腳完整入鏡。',
+    view_front: '正面。請面向鏡頭站好，雙腳與髖同寬，腳尖朝前，雙手自然垂放在身體兩側，眼睛平視前方。',
+    view_right: '右側面。請向左轉九十度，讓右側身體面對鏡頭，雙手自然下垂，眼睛平視前方。',
+    view_back: '背面。請再向左轉九十度，背對鏡頭站好，雙腳與髖同寬，雙手自然下垂。',
+    view_left: '左側面。請再向左轉九十度，讓左側身體面對鏡頭，眼睛平視前方。',
+    noPerson: '看不到受測者，請站到鏡頭前方。',
+    backUp: '請離鏡頭遠一點，往後退一步，讓頭和腳都入鏡。',
+    comeCloser: '請往鏡頭靠近一步。',
+    camUp: '頭頂沒有入鏡，手機鏡頭請往上抬一點。',
+    camDown: '腳沒有入鏡，手機鏡頭請往下壓一點。',
+    voiceHint: '語音模式已開啟。請站到拍攝位置後說「開始」，會依序拍正面、右側、背面、左側，每面拍完會告訴你怎麼轉，不需要走回手機。也可以說「重拍」、「下一個」或「停止」。',
+    turn_front: '請轉身，面向鏡頭。', turn_back: '請轉身，背對鏡頭。',
+    turn_right: '請轉身，讓右側面對鏡頭。', turn_left: '請轉身，讓左側面對鏡頭。',
+    arms: '雙手請自然放在身體兩側。', still: '請站穩，保持不動。',
+    readyAuto: '姿勢就緒，即將開始倒數。', readyManual: '姿勢就緒。請說「拍照」，或舉起一隻手超過頭頂，開始倒數。',
+    recording: '開始記錄，請保持不動。', allDone: '四個方向都拍攝完成，謝謝，可以休息了。',
+    romIntro: '關節活動度測試開始。每個動作請先看畫面右上角的示範，聽口令做到最大範圍，停住，再慢慢回來。',
+    romAllDone: '關節活動度測試完成，謝謝，可以休息了。',
+  },
+  en: {
+    intro: 'Welcome. Please stand about three meters from the camera so your whole body is visible.',
+    view_front: 'Front view. Face the camera, feet hip-width apart, toes forward, arms relaxed at your sides, eyes level.',
+    view_right: 'Right side. Turn ninety degrees to your left so your right side faces the camera. Arms relaxed, eyes level.',
+    view_back: 'Back view. Turn ninety degrees to your left again, with your back to the camera. Arms relaxed.',
+    view_left: 'Left side. Turn ninety degrees to your left again so your left side faces the camera.',
+    noPerson: 'I cannot see you. Please step in front of the camera.',
+    backUp: 'Please step back from the camera so your head and feet are visible.',
+    voiceHint: 'Voice mode on. Stand in position and say start. Front, right, back and left views are captured in turn; after each one I will tell you how to turn. You can also say retake, next, or stop.',
+    turn_front: 'Please turn to face the camera.', turn_back: 'Please turn your back to the camera.',
+    turn_right: 'Please turn so your right side faces the camera.', turn_left: 'Please turn so your left side faces the camera.',
+    readyManual: 'Position OK. Say “capture” or raise one hand above your head to start.',
+    allDone: 'All four views captured. Thank you, you may relax.',
+    romIntro: 'Range of motion test. For each movement, watch the demo at the top right, follow the cues to your full range, hold, then slowly come back.',
+    romAllDone: 'Range of motion test complete. Thank you, you may relax.',
   },
 };
 
@@ -205,7 +247,10 @@ export const COMMANDS = {
 let lang = 'zh';
 export const getLang = () => lang;
 export function t(key) { return (STR[lang] && STR[lang][key]) ?? STR.zh[key] ?? key; }
-export function v(key) { return VOICE[lang][key] ?? key; }
+let voiceLevel = 'short';
+export const setVoiceLevel = l => { voiceLevel = l === 'full' ? 'full' : 'short'; };
+export const getVoiceLevel = () => voiceLevel;
+export function v(key) { return (voiceLevel === 'full' ? VOICE_FULL[lang][key] : null) ?? VOICE[lang][key] ?? key; }
 
 // 套用語言到所有 data-i18n 元素
 export function setLang(l) {
