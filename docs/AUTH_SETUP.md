@@ -116,4 +116,11 @@ App 右上角的 💬 按鈕可送出回饋；App 也會自動回報程式錯誤
 
 工作表第一次收到資料時會自動建立。使用者勾選「附上目前的相機畫面」時，圖片存到管理者雲端硬碟的 `posture-analyzer feedback` 資料夾。
 
-**啟用方式**：把 `apps-script/Code.gs` 的新版內容更新到 Apps Script（保留你自己填的 `CLIENT_ID`、`ROSTER_ID`），然後「部署 → 管理部署作業 → 編輯 → 版本：新版本 → 部署」。因為新增了雲端硬碟權限，第一次需要重新授權。
+**啟用方式**：
+1. Apps Script 編輯器左側「檔案」旁的 ＋ →「指令碼」，命名 `Feedback`，把 `apps-script/Feedback.gs` 全部內容貼上。
+2. 在 `Code.gs` 的 `doPost` 裡，`if (body.action === 'module') ...` 那一行下面加兩行：
+   ```js
+   if (body.action === 'feedback') return json(feedback_(body));
+   if (body.action === 'errlog') return json(errlog_(body));
+   ```
+3. 儲存後「部署 → 管理部署作業 → 編輯 → 版本：新版本 → 部署」。因為新增了雲端硬碟權限，第一次需要重新授權。
