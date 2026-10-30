@@ -17,7 +17,7 @@ import { loadModule, wrapModule } from './ectmodule.js';
 import { renderPhoto, composeBoard, meanSDTable, varLabel } from './posturecard.js';
 import { DEFAULT_QUAD, drawFloorGuide } from './floorguide.js';
 
-export const APP_VERSION = '1.6.1'; // 與 sw.js 的 CACHE 版本一起更新
+export const APP_VERSION = '1.6.2'; // 與 sw.js 的 CACHE 版本一起更新
 
 const $ = s => document.querySelector(s);
 const fin = Number.isFinite;

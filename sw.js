@@ -1,6 +1,6 @@
 // sw.js — Service worker：預先快取程式、Chart.js、MediaPipe WASM 與 heavy 模型 → 可離線使用
 // 更新程式時：把 CACHE 版本號 +1（並同步 js/app.js 的 APP_VERSION），使用者下次開啟即取得新版。
-const CACHE = 'posture-v1.6.1';
+const CACHE = 'posture-v1.6.2';
 const MP = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
 
 const LOCAL = [
@@ -20,7 +20,8 @@ const REMOTE = [
 self.addEventListener('install', e => {
   e.waitUntil((async () => {
     const c = await caches.open(CACHE);
-    await c.addAll(LOCAL);
+    // cache: 'reload'：略過瀏覽器 HTTP 快取（GitHub Pages 會快取 10 分鐘），確保存進來的是新版檔案
+    await c.addAll(LOCAL.map(u => new Request(u, { cache: 'reload' })));
     // 遠端檔案逐一快取；單一失敗不阻擋安裝（之後由 fetch 時再補快取）
     await Promise.all(REMOTE.map(u => c.add(new Request(u, { mode: 'cors' })).catch(err => console.warn('precache fail', u, err))));
     self.skipWaiting(); // 新版立即接手
@@ -44,7 +45,8 @@ self.addEventListener('fetch', e => {
   if (!isLocal && !isCDN) return;
   if (isLocal) {
     // 本機程式：network-first（線上時拿最新，離線用快取）
-    e.respondWith(fetch(req).then(res => { const cp = res.clone(); caches.open(CACHE).then(c => c.put(req, cp)); return res; })
+    // no-cache：每次向伺服器確認是否有新版（未變更時只回 304，很快），避免 HTTP 快取給舊版程式
+    e.respondWith(fetch(req, { cache: 'no-cache' }).then(res => { const cp = res.clone(); caches.open(CACHE).then(c => c.put(req, cp)); return res; })
       .catch(() => caches.match(req, { ignoreSearch: true })));
   } else {
     // CDN（版本固定）：cache-first，未命中再抓並存入（lite/full 模型會在第一次使用時被快取）
