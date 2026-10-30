@@ -34,146 +34,210 @@
   </div>
   <header>
     <h1 data-i18n="appTitle">人體姿勢分析器</h1>
-    <button id="langBtn" class="ghost">EN</button>
+    <div class="hdr-right">
+      <!-- 目前受測者：點一下回到步驟① -->
+      <button id="curSubj" class="cursubj" type="button"></button>
+      <button id="langBtn" class="ghost">EN</button>
+      <button id="settingsBtn" class="ghost iconbtn" title="設定" aria-label="設定">⚙</button>
+    </div>
   </header>
 
-  <nav class="tabs">
-    <button data-tab="capture" class="on" data-i18n="tabCapture">拍攝</button>
-    <button data-tab="results" data-i18n="tabResults">結果</button>
-    <button data-tab="rom" data-i18n="tabRom">ROM</button>
-    <button data-tab="ect" data-i18n="tabEct">ECT 模組</button>
-    <button data-tab="history" data-i18n="tabHistory">歷史</button>
-    <button data-tab="settings" data-i18n="tabSettings">設定</button>
+  <!-- 依實際流程排列的六個步驟；不強制照順序 -->
+  <nav class="tabs steps">
+    <button data-tab="subject" data-i18n="stepSubject">① 受測者</button>
+    <button data-tab="items" data-i18n="stepItems">② 測試項目</button>
+    <button data-tab="setup" data-i18n="stepSetup">③ 環境設定</button>
+    <button data-tab="test" data-i18n="stepTest">④ 進行測試</button>
+    <button data-tab="results" data-i18n="stepResults">⑤ 結果</button>
+    <button data-tab="ref" data-i18n="stepRef">⑥ 參考資料</button>
   </nav>
 
-  <!-- 拍攝 -->
-  <section id="tab-capture" class="tab on">
-    <div class="chips" id="viewChips"></div>
-    <div class="stage">
-      <!-- iOS Safari 必須 playsinline + muted 才能內嵌播放相機 -->
-      <video id="video" playsinline muted autoplay></video>
-      <canvas id="stage"></canvas>
-      <!-- 鏡像顯示（像照鏡子）；錄影與量測仍用上面的主畫布 -->
-      <canvas id="mview" class="offview"></canvas>
-      <!-- ROM 測試示範動畫（SVG 向量人形） -->
-      <svg id="romDemo" class="romdemo" hidden></svg>
-      <div id="msg" class="msg"></div>
+  <!-- ① 受測者：名冊（新增／選擇／編輯）＋此人的過去紀錄 -->
+  <section id="tab-subject" class="tab">
+    <div class="row wrap between">
+      <input id="subjSearch" type="search" data-i18n-ph="subjSearch" placeholder="搜尋姓名或編號">
+      <button id="newSubjBtn" class="primary" data-i18n="newSubject">＋ 新增受測者</button>
     </div>
-    <div id="status" class="status"></div>
+    <form id="subjForm" class="form card" hidden>
+      <h3 id="subjFormTitle" class="full"></h3>
+      <label><span data-i18n="subjId">編號 *</span><input name="id" required maxlength="40"></label>
+      <label><span data-i18n="subjName">姓名</span><input name="name" maxlength="40"></label>
+      <label><span data-i18n="subjSex">性別</span><select name="sex"><option value=""></option><option value="M" data-i18n="sexM">男</option><option value="F" data-i18n="sexF">女</option><option value="O" data-i18n="sexO">其他</option></select></label>
+      <label><span data-i18n="subjBirth">出生日期</span><input name="birth" type="date"></label>
+      <label><span data-i18n="height">身高 (cm) *</span><input name="height_cm" type="number" step="0.1" min="80" max="230" required></label>
+      <label><span data-i18n="mass">體重 (kg)</span><input name="mass_kg" type="number" step="0.1" min="10" max="250"></label>
+      <label><span data-i18n="subjDominant">慣用側</span><select name="dominant"><option value=""></option><option value="R" data-i18n="domR">右</option><option value="L" data-i18n="domL">左</option></select></label>
+      <label class="full"><span data-i18n="subjNotes">備註（運動項目、傷病史等）</span><textarea name="notes" rows="2"></textarea></label>
+      <div class="btns full">
+        <button type="submit" class="primary" data-i18n="saveSubject">儲存並選擇</button>
+        <button type="button" id="subjCancelBtn" data-i18n="cancel">取消</button>
+        <button type="button" id="subjDeleteBtn" class="danger" data-i18n="btnDelete">刪除</button>
+      </div>
+      <p class="hint full" data-i18n="subjPrivacy"></p>
+    </form>
+    <div id="subjList" class="subjlist"></div>
+    <h3 id="histTitle" data-i18n="history">歷史紀錄</h3>
+    <div id="historyList"></div>
+  </section>
+
+  <!-- ② 測試項目：靜態姿勢與 AROM 分開設定，測試時也分開開始 -->
+  <section id="tab-items" class="tab">
+    <div class="cards">
+      <div class="card">
+        <h3 data-i18n="itemPosture">靜態姿勢（四面）</h3>
+        <form id="itemsForm" class="form cfgform">
+          <label><span data-i18n="countdownSec">倒數秒數</span><input name="countdownSec" type="number" min="1" max="10"></label>
+          <label><span data-i18n="captureSec">記錄秒數</span><input name="captureSec" type="number" min="1" max="30"></label>
+          <label class="chk"><input name="autoCapture" type="checkbox"><span data-i18n="autoCapture">對位完成自動倒數</span></label>
+          <label class="chk"><input name="gesture" type="checkbox"><span data-i18n="gesture">舉手手勢觸發拍照</span></label>
+          <label><span data-i18n="voiceLevel">語音提示</span><select name="voiceLevel"><option value="short" data-i18n="vlShort">簡易（短指令）</option><option value="full" data-i18n="vlFull">完整（詳細說明）</option></select></label>
+        </form>
+      </div>
+      <div class="card">
+        <h3 data-i18n="itemArom">AROM 關節活動度</h3>
+        <p class="hint" data-i18n="romHint"></p>
+        <div class="btns small"><button id="romAllBtn" data-i18n="selectAll">全選</button><button id="romNoneBtn" data-i18n="selectNone">全不選</button></div>
+        <div id="romChecklist" class="romlist"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ③ 環境設定：開相機、鏡頭、鏡像、地面 A4 紙、鉛垂；上方是檢查清單 -->
+  <section id="tab-setup" class="tab">
+    <ul id="setupChecks" class="checks"></ul>
+    <div id="stageHostSetup" class="stagehost"></div>
+    <div class="setupgrid">
+      <div class="card"><h4 data-i18n="grpCamera">相機</h4>
+        <div class="btns">
+          <button id="camBtn" class="primary" data-i18n="btnCamera">開啟相機</button>
+          <select id="camSel" class="camsel" aria-label="鏡頭"><option value="">自動（前/後鏡頭）</option></select>
+          <button id="flipBtn" data-i18n="btnFlip">🔄 切換鏡頭</button>
+          <button id="mirrorBtn">鏡像：關</button>
+        </div></div>
+      <div class="card"><h4 data-i18n="grpFloor">地面 A4 紙（井字框）</h4>
+        <div class="btns">
+          <button id="floorBtn">井字框：關</button>
+          <button id="floorEditBtn">調整井字框</button>
+          <button id="floorResetBtn" data-i18n="btnFloorReset">重設井字框</button>
+        </div></div>
+      <div class="card"><h4 data-i18n="grpPlumb">鉛垂校正</h4>
+        <div class="btns">
+          <button id="plumbSensorBtn" data-i18n="btnPlumbSensor">感測器鉛垂</button>
+          <button id="plumbManualBtn" data-i18n="btnPlumbManual">手動鉛垂</button>
+          <button id="plumbResetBtn" data-i18n="btnPlumbReset">取消鉛垂</button>
+        </div></div>
+      <div class="card"><h4 data-i18n="grpDisplay">顯示</h4>
+        <div class="btns"><button id="trailBtn">軌跡：關</button></div></div>
+    </div>
+  </section>
+
+  <!-- ④ 進行測試：大畫面＋少數按鈕；姿勢與 AROM 分開開始 -->
+  <section id="tab-test" class="tab">
+    <div id="testHint" class="testhint"></div>
     <div class="btns">
-      <button id="camBtn" class="primary" data-i18n="btnCamera">開啟相機</button>
-      <button id="flipBtn" data-i18n="btnFlip">🔄 切換鏡頭</button>
-      <select id="camSel" class="camsel" aria-label="鏡頭"><option value="">自動（前/後鏡頭）</option></select>
-      <button id="guideBtn" class="primary" data-i18n="btnStartSession" disabled>開始引導拍攝</button>
-      <button id="romBtn" class="primary" data-i18n="btnRom" disabled>開始 ROM 測試</button>
-      <button id="capBtn" data-i18n="btnCaptureNow" disabled>立即拍攝</button>
-      <button id="nextBtn" data-i18n="btnNext">下一個方向</button>
-      <button id="retakeBtn" data-i18n="btnRetake">重拍</button>
-      <button id="stopBtn" data-i18n="btnStop">停止</button>
+      <button id="guideBtn" class="primary big" data-i18n="btnStartSession" disabled>開始姿勢拍攝（四面）</button>
+      <button id="romBtn" class="primary big" data-i18n="btnRom" disabled>開始 AROM 測試</button>
+      <button id="camBtn2" data-i18n="btnCamera">開啟相機</button>
     </div>
-    <div class="btns small">
-      <button id="plumbSensorBtn" data-i18n="btnPlumbSensor">感測器鉛垂</button>
-      <button id="plumbManualBtn" data-i18n="btnPlumbManual">手動鉛垂</button>
-      <button id="plumbResetBtn" data-i18n="btnPlumbReset">取消鉛垂</button>
+    <div class="chips" id="viewChips"></div>
+    <div id="stageHostTest" class="stagehost">
+      <div class="stage">
+        <!-- iOS Safari 必須 playsinline + muted 才能內嵌播放相機 -->
+        <video id="video" playsinline muted autoplay></video>
+        <canvas id="stage"></canvas>
+        <!-- 鏡像顯示（像照鏡子）；錄影與量測仍用上面的主畫布 -->
+        <canvas id="mview" class="offview"></canvas>
+        <!-- ROM 測試示範動畫（SVG 向量人形） -->
+        <svg id="romDemo" class="romdemo" hidden></svg>
+        <div id="msg" class="msg"></div>
+      </div>
+      <div id="status" class="status"></div>
+    </div>
+    <div class="btns">
+      <button id="capBtn" data-i18n="btnCaptureNow" disabled>立即拍攝</button>
+      <button id="retakeBtn" data-i18n="btnRetake">重拍</button>
+      <button id="nextBtn" data-i18n="btnNext">下一個</button>
+      <button id="stopBtn" data-i18n="btnStop">停止</button>
       <button id="voiceBtn" data-i18n="btnVoiceOff">語音指令：關</button>
       <button id="voiceLevelBtn">語音：簡易</button>
-    </div>
-    <!-- 地面 A4 紙擺位參考框 -->
-    <div class="btns small">
-      <button id="floorBtn">井字框：關</button>
-      <button id="floorEditBtn">調整井字框</button>
-      <button id="floorResetBtn" data-i18n="btnFloorReset">重設井字框</button>
-      <button id="trailBtn">軌跡：關</button>
-      <button id="mirrorBtn">鏡像：關</button>
     </div>
     <p id="heard" class="hint"></p>
   </section>
 
-  <!-- 結果 -->
+  <!-- ⑤ 結果：靜態姿勢 / AROM 兩個子分頁 -->
   <section id="tab-results" class="tab">
-    <p id="resInfo" class="hint"></p>
-    <div class="btns small">
-      <button id="saveBtn" class="primary" data-i18n="btnSave">儲存本次</button>
-      <button id="boardBtn" data-i18n="btnBoard">下載四面照片</button>
-      <button id="reportBtn" data-i18n="btnReport">HTML/PDF 報告</button>
-      <button id="csvBtn" data-i18n="btnCSV">下載 CSV</button>
-      <button id="videoBtn" data-i18n="btnVideo">下載影片</button>
-      <button id="baselineBtn" data-i18n="btnSetBaseline">設為 0° 基準</button>
-      <button id="clearBaselineBtn" data-i18n="btnClearBaseline">清除基準</button>
+    <div class="subtabs">
+      <button data-sub="posture" class="on" data-i18n="itemPosture">靜態姿勢（四面）</button>
+      <button data-sub="arom" data-i18n="itemArom">AROM 關節活動度</button>
     </div>
-    <!-- 四面姿勢照片：裁切人物 + 標註 + 問題點 + 平均 ± SD -->
-    <div id="board" class="board"></div>
-    <details class="adv">
-      <summary data-i18n="advChart">進階：記錄期間的變化曲線（研究用）</summary>
-      <div class="row wrap">
-        <label><span data-i18n="view">方向</span> <select id="resView"></select></label>
-        <label><span data-i18n="variables">變數</span> <select id="resVar"></select></label>
-        <label><span data-i18n="compareMode">比較模式</span>
-          <select id="resCmp">
-            <option value="none" data-i18n="cmpNone">無</option>
-            <option value="lr" data-i18n="cmpLR">左右疊圖</option>
-            <option value="session" data-i18n="cmpSession">前後測疊圖</option>
-            <option value="trend" data-i18n="trend">多日趨勢</option>
-          </select></label>
+    <div id="res-posture">
+      <p id="resInfo" class="hint"></p>
+      <div class="btns small">
+        <button id="saveBtn" class="primary" data-i18n="btnSave">儲存本次</button>
+        <button id="boardBtn" data-i18n="btnBoard">下載四面照片</button>
+        <button id="reportBtn" data-i18n="btnReport">HTML/PDF 報告</button>
+        <button id="csvBtn" data-i18n="btnCSV">下載 CSV</button>
+        <button id="videoBtn" data-i18n="btnVideo">下載影片</button>
+        <button id="baselineBtn" data-i18n="btnSetBaseline">設為 0° 基準</button>
+        <button id="clearBaselineBtn" data-i18n="btnClearBaseline">清除基準</button>
       </div>
-      <div class="chartbox"><canvas id="chart"></canvas></div>
-      <div class="btns small"><button id="pngBtn" data-i18n="btnPNG">下載圖表 PNG</button></div>
-    </details>
-  </section>
-
-  <!-- ROM 測試 -->
-  <section id="tab-rom" class="tab">
-    <p class="hint" data-i18n="romHint"></p>
-    <h3 data-i18n="romSelect">測試動作</h3>
-    <div class="btns small"><button id="romAllBtn" data-i18n="selectAll">全選</button><button id="romNoneBtn" data-i18n="selectNone">全不選</button></div>
-    <div id="romChecklist" class="romlist"></div>
-    <h3 data-i18n="romResults">ROM 結果</h3>
-    <p id="romInfo" class="hint"></p>
-    <div id="romTable" class="scroll"></div>
-    <h3 data-i18n="asym">左右差異</h3>
-    <div id="romAsym" class="scroll"></div>
-    <div class="row wrap"><label><span data-i18n="romMove">動作</span> <select id="romSel"></select></label></div>
-    <div class="chartbox"><canvas id="romChart"></canvas></div>
-    <div class="btns small">
-      <button id="romCsvBtn" data-i18n="btnCSV">下載 CSV</button>
-      <button id="romVideoBtn" data-i18n="btnVideo">下載影片</button>
-      <button id="romPngBtn" data-i18n="btnPNG">下載圖表 PNG</button>
-      <button id="romReportBtn" data-i18n="btnReport">HTML/PDF 報告</button>
+      <!-- 四面姿勢照片：裁切人物 + 標註 + 問題點 + 平均 ± SD -->
+      <div id="board" class="board"></div>
+      <details class="adv">
+        <summary data-i18n="advChart">進階：記錄期間的變化曲線（研究用）</summary>
+        <div class="row wrap">
+          <label><span data-i18n="view">方向</span> <select id="resView"></select></label>
+          <label><span data-i18n="variables">變數</span> <select id="resVar"></select></label>
+          <label><span data-i18n="compareMode">比較模式</span>
+            <select id="resCmp">
+              <option value="none" data-i18n="cmpNone">無</option>
+              <option value="lr" data-i18n="cmpLR">左右疊圖</option>
+              <option value="session" data-i18n="cmpSession">前後測疊圖</option>
+              <option value="trend" data-i18n="trend">多日趨勢</option>
+            </select></label>
+        </div>
+        <div class="chartbox"><canvas id="chart"></canvas></div>
+        <div class="btns small"><button id="pngBtn" data-i18n="btnPNG">下載圖表 PNG</button></div>
+      </details>
     </div>
-    <div id="romSnaps" class="snaps"></div>
+    <div id="res-arom" hidden>
+      <p id="romInfo" class="hint"></p>
+      <div class="btns small">
+        <button id="romReportBtn" class="primary" data-i18n="btnReport">HTML/PDF 報告</button>
+        <button id="romCsvBtn" data-i18n="btnCSV">下載 CSV</button>
+        <button id="romVideoBtn" data-i18n="btnVideo">下載影片</button>
+      </div>
+      <div id="romTable" class="scroll"></div>
+      <h3 data-i18n="asym">左右差異</h3>
+      <div id="romAsym" class="scroll"></div>
+      <div id="romSnaps" class="snaps"></div>
+      <details class="adv">
+        <summary data-i18n="advRomChart">進階：動作過程角度曲線</summary>
+        <div class="row wrap"><label><span data-i18n="romMove">動作</span> <select id="romSel"></select></label></div>
+        <div class="chartbox"><canvas id="romChart"></canvas></div>
+        <div class="btns small"><button id="romPngBtn" data-i18n="btnPNG">下載圖表 PNG</button></div>
+      </details>
+    </div>
   </section>
 
-  <!-- ECT 互動評估模組（登入後由 Apps Script 下載，不在 GitHub） -->
-  <section id="tab-ect" class="tab ecttab">
+  <!-- ⑥ 參考資料：ECT 互動評估模組（登入後由 Apps Script 下載，不在 GitHub） -->
+  <section id="tab-ref" class="tab ecttab">
     <div class="row wrap"><span id="ectStatus" class="hint"></span><button id="ectReload" class="ghost small" data-i18n="ectReload">重新下載</button></div>
     <iframe id="ectFrame" class="ectframe" title="ECT 互動評估模組"></iframe>
   </section>
 
-  <!-- 歷史 -->
-  <section id="tab-history" class="tab">
-    <h3 data-i18n="history">歷史紀錄</h3>
-    <div id="historyList"></div>
-  </section>
-
-  <!-- 設定 -->
+  <!-- ⚙ 設定：不常用的進階選項 -->
   <section id="tab-settings" class="tab">
-    <form id="settingsForm" class="form">
+    <h3 data-i18n="tabSettings">設定</h3>
+    <form id="settingsForm" class="form cfgform">
       <label><span data-i18n="lang">語言</span><select name="lang"><option value="zh">中文</option><option value="en">English</option></select></label>
-      <label><span data-i18n="subject">受測者 ID</span><input name="subject"></label>
-      <label><span data-i18n="height">身高 (cm)</span><input name="height_cm" type="number" step="0.1" min="80" max="230"></label>
-      <label><span data-i18n="mass">體重 (kg)</span><input name="mass_kg" type="number" step="0.1" min="10" max="250"></label>
       <label><span data-i18n="model">模型</span><select name="model"><option value="heavy">heavy（最準）</option><option value="full">full</option><option value="lite">lite（最快）</option></select></label>
       <label><span data-i18n="camera">鏡頭</span><select name="facing"><option value="environment" data-i18n="camBack">後鏡頭</option><option value="user" data-i18n="camFront">前鏡頭</option></select></label>
       <label><span data-i18n="resolution">解析度</span><select name="res"><option value="480">480p</option><option value="720">720p</option><option value="1080">1080p</option></select></label>
       <label><span data-i18n="delegate">運算方式</span><select name="delegate"><option value="GPU">GPU（快）</option><option value="CPU">CPU（穩定）</option></select></label>
       <label><span data-i18n="videoFmt">錄影格式</span><select name="videoFmt"><option value="auto" data-i18n="fmtAuto">自動</option><option value="webm">WebM (VP8)</option><option value="mp4">MP4 (H.264)</option><option value="none" data-i18n="fmtNone">不錄影</option></select></label>
-      <label><span data-i18n="voiceLevel">語音提示</span><select name="voiceLevel"><option value="short" data-i18n="vlShort">簡易（短指令）</option><option value="full" data-i18n="vlFull">完整（詳細說明）</option></select></label>
-      <label><span data-i18n="captureSec">記錄秒數</span><input name="captureSec" type="number" min="1" max="30"></label>
-      <label><span data-i18n="countdownSec">倒數秒數</span><input name="countdownSec" type="number" min="1" max="10"></label>
       <label><span data-i18n="visThr">可信度閾值</span><input name="visThr" type="number" step="0.05" min="0" max="1"></label>
       <label class="chk"><input name="mirrorFix" type="checkbox"><span data-i18n="mirrorFix">前鏡頭鏡像修正</span></label>
-      <label class="chk"><input name="autoCapture" type="checkbox"><span data-i18n="autoCapture">對位完成自動倒數</span></label>
-      <label class="chk"><input name="gesture" type="checkbox"><span data-i18n="gesture">舉手手勢觸發拍照</span></label>
       <label class="chk"><input name="rawLm" type="checkbox"><span data-i18n="rawLm">CSV 含原始 33 點座標</span></label>
       <label class="full"><span data-i18n="thresholds">判定閾值 (JSON)</span><textarea name="thr" rows="12" spellcheck="false"></textarea></label>
       <div class="btns"><button type="submit" class="primary" data-i18n="saveSettings">儲存設定</button><button type="button" id="resetThrBtn" data-i18n="resetThr">還原預設閾值</button></div>

@@ -17,7 +17,7 @@ import { loadModule, wrapModule } from './ectmodule.js';
 import { renderPhoto, composeBoard, meanSDTable, varLabel } from './posturecard.js';
 import { DEFAULT_FLOOR, drawFloorGuide, floorHandles, dragFloor } from './floorguide.js';
 
-export const APP_VERSION = '1.7.0'; // 與 sw.js 的 CACHE 版本一起更新
+export const APP_VERSION = '1.8.0'; // 與 sw.js 的 CACHE 版本一起更新
 
 const $ = s => document.querySelector(s);
 const fin = Number.isFinite;
@@ -176,10 +176,12 @@ function stopCamera() {
   setCamButton(false);
 }
 function setCamButton(on) {
-  const b = $('#camBtn');
-  b.dataset.i18n = on ? 'btnCameraOff' : 'btnCamera';
-  b.textContent = t(b.dataset.i18n);
-  b.classList.toggle('primary', !on); b.classList.toggle('danger', on);
+  for (const b of [$('#camBtn'), $('#camBtn2')]) {
+    b.dataset.i18n = on ? 'btnCameraOff' : 'btnCamera';
+    b.textContent = t(b.dataset.i18n);
+    b.classList.toggle('primary', !on); b.classList.toggle('danger', on);
+  }
+  updateChecks();
 }
 async function ensureModel() {
   const key = `${cfg.model}/${cfg.delegate}`;
@@ -444,7 +446,7 @@ async function finishRecording() {
       if (S.voiceOn) $('#msg').textContent = `${t('view_' + view)} ✓\n${t('nextView')}${t('view_' + VIEWS[next])}`;
       setTimeout(() => { if (S.guided && S.phase === 'done') enterAlign(); }, 1800);
     }
-    else { S.guided = false; setPhase('idle'); say('allDone'); $('#msg').textContent = S.voiceOn ? t('allDoneShort') : ''; await saveCurrent(true); showTab('results'); }
+    else { S.guided = false; setPhase('idle'); say('allDone'); $('#msg').textContent = S.voiceOn ? t('allDoneShort') : ''; await saveCurrent(true); showResults('posture'); }
   } else setPhase('idle');
 }
 
@@ -461,7 +463,7 @@ function startRomTest() {
   if (!S.pose) { toast(t('cameraOff')); return; }
   syncRomSel();
   const list = MOVES.filter(m => !cfg.romSel || cfg.romSel.includes(m.id));
-  if (!list.length) { toast(t('romNone')); showTab('rom'); return; }
+  if (!list.length) { toast(t('romNone')); showTab('items'); return; }
   S.mode = 'rom'; S.guided = false;
   S.session = newSession(); S.session.rom = {};
   S.rom = { list, idx: 0, phaseStart: 0, cueIdx: 0, live: {}, snaps: {}, lastView: null };
@@ -489,7 +491,7 @@ function endRomTest(completed) {
   S.mode = 'posture'; setPhase('idle'); $('#romDemo').toggleAttribute('hidden', true); $('#msg').textContent = '';
   $('.stage').classList.toggle('solo', S.voiceOn);
   if (completed) say('romAllDone');
-  if (S.session?.rom && Object.keys(S.session.rom).length) { saveCurrent(true); renderRom(); if (completed) showTab('rom'); }
+  if (S.session?.rom && Object.keys(S.session.rom).length) { saveCurrent(true); renderRom(); if (completed) showResults('arom'); }
 }
 // 對位：方向正確、此動作相關的關鍵點都入鏡、身體靜止
 function romAlignCue(det, detView, m) {
@@ -918,7 +920,7 @@ $('#ectReload').onclick = () => { S.ectLoaded = false; loadEct(); };
 
 // ---------------- 歷史 ----------------
 async function renderHistory() {
-  const list = (await store.listSessions()).reverse();
+  const list = (await store.listSessions()).reverse().filter(s => !S.subjectRec || s.subject === S.subjectRec.id);
   $('#historyList').innerHTML = list.length ? list.map(s => `<div class="hist"><div><b>${s.subject}</b> · ${new Date(s.date).toLocaleString()}<br><small>${VIEWS.filter(vw => s.views?.[vw]).map(vw => t('view_' + vw)).join('、')}${s.rom && Object.keys(s.rom).length ? ` · AROM ×${Object.keys(s.rom).length}` : ''}</small></div>
     <div class="btns small"><button data-act="load" data-id="${s.id}">${t('btnLoad')}</button><button data-act="cmp" data-id="${s.id}">${t('btnCompare')}</button><button data-act="del" data-id="${s.id}">${t('btnDelete')}</button></div></div>`).join('') : `<p class="hint">${t('noSession')}</p>`;
 }
@@ -927,7 +929,7 @@ $('#historyList').addEventListener('click', async e => {
   const s = await store.getSession(b.dataset.id); if (!s) return;
   if (b.dataset.act === 'load') {
     S.viewSession = s; S.baseline = (await store.getBaseline(s.subject)) ?? null;
-    showTab(Object.keys(s.views || {}).length ? 'results' : 'rom');   // 只有 ROM 的紀錄直接開 ROM 分頁
+    showResults(Object.keys(s.views || {}).length ? 'posture' : 'arom');   // 只有 AROM 的紀錄直接開 AROM 子分頁
   }
   if (b.dataset.act === 'cmp') { S.compare = s; toast(`${t('btnCompare')}: ${s.date.slice(0, 10)}`); }
   if (b.dataset.act === 'del' && confirm(t('confirmDelete'))) { await store.deleteSession(s.id); toast(t('deleted')); renderHistory(); }
@@ -935,12 +937,16 @@ $('#historyList').addEventListener('click', async e => {
 
 // ---------------- 設定 ----------------
 function fillSettings() {
-  const f = $('#settingsForm');
-  for (const [k, val] of Object.entries(cfg)) {
+  for (const f of document.querySelectorAll('form.cfgform')) for (const [k, val] of Object.entries(cfg)) {
     const el = f.elements[k]; if (!el) continue;
     if (el.type === 'checkbox') el.checked = !!val; else if (k === 'thr') el.value = JSON.stringify(val, null, 2); else el.value = val;
   }
 }
+$('#itemsForm').addEventListener('change', e => {
+  const el = e.target; if (!el.name) return;
+  cfg[el.name] = el.type === 'checkbox' ? el.checked : el.type === 'number' ? +el.value : el.value;
+  saveCfg(); if (el.name === 'voiceLevel') applyLang();
+});
 $('#settingsForm').addEventListener('submit', async e => {
   e.preventDefault();
   const f = e.target, old = { ...cfg };
@@ -952,7 +958,6 @@ $('#settingsForm').addEventListener('submit', async e => {
     else cfg[el.name] = el.value;
   }
   saveCfg(); applyLang();
-  if (old.subject !== cfg.subject) S.baseline = (await store.getBaseline(cfg.subject)) ?? null;
   if (S.session && !Object.keys(S.session.views).length) S.session = null;
   if (S.stream && (old.facing !== cfg.facing || old.res !== cfg.res)) startCamera();
   else if (S.stream && (old.model !== cfg.model || old.delegate !== cfg.delegate)) ensureModel();
@@ -968,20 +973,125 @@ $('#resetSafeBtn').onclick = () => {
 $('#resetThrBtn').onclick =() => { $('#settingsForm').elements.thr.value = JSON.stringify(DEFAULT_THR, null, 2); };
 
 // ---------------- 分頁、語言、按鈕 ----------------
+// 六個步驟：①受測者 ②測試項目 ③環境設定 ④進行測試 ⑤結果 ⑥參考資料（⚙ 設定另外開）
 function showTab(name) {
+  S.tab = name;
   document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
   document.querySelectorAll('.tab').forEach(s => s.classList.toggle('on', s.id === `tab-${name}`));
-  if (name === 'results') renderResults(); if (name === 'history') renderHistory();
-  if (name === 'rom') { renderRomChecklist(); renderRom(); }
-  if (name === 'ect' && !S.ectLoaded) loadEct();
+  $('#settingsBtn').classList.toggle('on', name === 'settings');
+  // 相機畫面只有一份：在③環境設定與④進行測試之間搬移
+  if (name === 'setup' || name === 'test') {
+    const host = $(name === 'setup' ? '#stageHostSetup' : '#stageHostTest');
+    const st = $('.stage'), stat = $('#status');
+    if (st.parentElement !== host) { host.appendChild(st); host.appendChild(stat); }
+  }
+  if (name === 'subject') { renderSubjects(); renderHistory(); }
+  if (name === 'items') renderRomChecklist();
+  if (name === 'results') { renderResults(); renderRom(); }
+  if (name === 'ref' && !S.ectLoaded) loadEct();
+  updateChecks();
+}
+function showResults(sub) {
+  document.querySelectorAll('.subtabs button').forEach(b => b.classList.toggle('on', b.dataset.sub === sub));
+  $('#res-posture').hidden = sub !== 'posture'; $('#res-arom').hidden = sub !== 'arom';
+  showTab('results');
 }
 document.querySelector('.tabs').addEventListener('click', e => { const b = e.target.closest('button'); if (b) showTab(b.dataset.tab); });
+document.querySelector('.subtabs').addEventListener('click', e => { const b = e.target.closest('button'); if (b) showResults(b.dataset.sub); });
+$('#settingsBtn').onclick = () => { if (S.tab === 'settings') showTab(S.prevTab || 'test'); else { S.prevTab = S.tab; showTab('settings'); } };
+$('#curSubj').onclick = () => showTab('subject');
+$('#camBtn2').onclick = () => (S.stream ? stopCamera() : startCamera());
+
+// ---------------- ③ 環境設定檢查清單、④ 測試前提示 ----------------
+function updateChecks() {
+  const n = S.hist.at(-1)?.n;
+  const fullBody = !!n && [0, 27, 28].every(i => n[i][3] >= cfg.visThr) && Math.max(n[27][1], n[28][1]) < 0.99;
+  const items = [['chkCamera', !!S.stream], ['chkFloor', !!cfg.floorOn], ['chkPlumb', S.plumbMode !== 'none', true], ['chkBody', fullBody]];
+  $('#setupChecks').innerHTML = items.map(([k, ok, opt]) => `<li class="${ok ? 'ok' : opt ? 'opt' : ''}">${ok ? '✓' : opt ? '○' : '✗'} ${t(k)}${opt && !ok ? ` <small>(${t('optional')})</small>` : ''}</li>`).join('');
+  const miss = [];
+  if (!S.subjectRec) miss.push(`<a href="#" data-go="subject">${t('needSubject')}</a>`);
+  if (!S.stream) miss.push(`<a href="#" data-go="setup">${t('needCamera')}</a>`);
+  $('#testHint').innerHTML = miss.length ? `⚠ ${miss.join('　')}` : '';
+}
+$('#testHint').addEventListener('click', e => { const g = e.target.closest('[data-go]'); if (g) { e.preventDefault(); showTab(g.dataset.go); } });
+setInterval(() => { if (S.tab === 'setup') updateChecks(); }, 700);
+
+// ---------------- ① 受測者名冊 ----------------
+const escA = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const ageOf = b => {
+  if (!b) return '';
+  const d = new Date(b), n = new Date(); let y = n.getFullYear() - d.getFullYear();
+  if (n < new Date(n.getFullYear(), d.getMonth(), d.getDate())) y--;
+  return y >= 0 ? y : '';
+};
+const subjLabel = p => (p ? `${p.name ? p.name + ' ' : ''}(${p.id})` : t('noSubject'));
+/** 選定受測者：同步到 cfg（身高、體重用於比例尺與報告），並載入此人的 0° 基準 */
+async function selectSubject(p) {
+  S.subjectRec = p || null;
+  if (p) { cfg.subject = p.id; cfg.height_cm = +p.height_cm || cfg.height_cm; cfg.mass_kg = +p.mass_kg || cfg.mass_kg; }
+  saveCfg();
+  $('#curSubj').textContent = `👤 ${subjLabel(p)}`;
+  $('#curSubj').classList.toggle('none', !p);
+  S.baseline = p ? (await store.getBaseline(p.id).catch(() => null)) ?? null : null;
+  S.session = null; S.liveScale = NaN;
+  updateChecks();
+}
+async function renderSubjects() {
+  const q = ($('#subjSearch').value || '').trim().toLowerCase();
+  const list = (await store.listSubjects()).filter(p => !q || `${p.id} ${p.name || ''}`.toLowerCase().includes(q));
+  const sex = { M: t('sexM'), F: t('sexF'), O: t('sexO') }, dom = { R: t('domR'), L: t('domL') };
+  $('#subjList').innerHTML = list.length ? list.map(p => {
+    const cur = p.id === S.subjectRec?.id, age = ageOf(p.birth);
+    const info = [sex[p.sex], age !== '' ? `${age} ${t('yearsOld')}` : '', p.height_cm ? `${p.height_cm} cm` : '', p.mass_kg ? `${p.mass_kg} kg` : '', p.dominant ? `${t('subjDominant')}：${dom[p.dominant]}` : ''].filter(Boolean).join(' · ');
+    return `<div class="subj ${cur ? 'cur' : ''}" data-id="${escA(p.id)}">
+      <div><b>${escA(p.name || p.id)}</b> <small>${escA(p.id)}</small><br><small>${info}</small>${p.notes ? `<br><small class="hint">${escA(p.notes)}</small>` : ''}</div>
+      <div class="btns small"><button data-act="pick" class="${cur ? '' : 'primary'}">${t(cur ? 'selected' : 'select')}</button><button data-act="edit">${t('edit')}</button></div></div>`;
+  }).join('') : `<p class="hint">${t(q ? 'noMatch' : 'noSubjects')}</p>`;
+  $('#histTitle').textContent = S.subjectRec ? `${t('history')}：${subjLabel(S.subjectRec)}` : t('history');
+}
+function openSubjForm(p) {
+  const f = $('#subjForm'); f.hidden = false; f.reset();
+  f.dataset.editing = p?.id || '';
+  $('#subjFormTitle').textContent = t(p ? 'editSubject' : 'newSubject');
+  for (const k of ['id', 'name', 'sex', 'birth', 'height_cm', 'mass_kg', 'dominant', 'notes']) f.elements[k].value = p?.[k] ?? '';
+  $('#subjDeleteBtn').hidden = !p;
+  f.scrollIntoView({ behavior: 'smooth', block: 'start' }); f.elements[p ? 'name' : 'id'].focus();
+}
+$('#newSubjBtn').onclick = () => openSubjForm(null);
+$('#subjCancelBtn').onclick = () => { $('#subjForm').hidden = true; };
+$('#subjSearch').addEventListener('input', renderSubjects);
+$('#subjForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const f = e.target, old = f.dataset.editing, id = f.elements.id.value.trim();
+  if (!id) return;
+  const all = await store.listSubjects();
+  if (id !== old && all.some(p => p.id === id)) { toast(t('subjExists')); return; }
+  const p = { ...(all.find(x => x.id === old) || { created: new Date().toISOString() }), id };
+  for (const k of ['name', 'sex', 'birth', 'height_cm', 'mass_kg', 'dominant', 'notes']) p[k] = f.elements[k].value.trim();
+  p.height_cm = p.height_cm ? +p.height_cm : ''; p.mass_kg = p.mass_kg ? +p.mass_kg : '';
+  await store.saveSubject(p);
+  if (old && old !== id) await store.deleteSubject(old);   // 改編號：舊紀錄仍以舊編號保存
+  f.hidden = true; await selectSubject(p); renderSubjects(); renderHistory(); toast(t('saved'));
+});
+$('#subjDeleteBtn').onclick = async () => {
+  const id = $('#subjForm').dataset.editing; if (!id || !confirm(t('confirmDelSubject'))) return;
+  await store.deleteSubject(id);
+  if (S.subjectRec?.id === id) await selectSubject(null);
+  $('#subjForm').hidden = true; renderSubjects(); renderHistory();
+};
+$('#subjList').addEventListener('click', async e => {
+  const b = e.target.closest('button'), row = e.target.closest('.subj'); if (!b || !row) return;
+  const p = (await store.listSubjects()).find(x => x.id === row.dataset.id); if (!p) return;
+  if (b.dataset.act === 'edit') openSubjForm(p);
+  else { await selectSubject(p); renderSubjects(); renderHistory(); toast(`👤 ${subjLabel(p)}`); }
+});
 function applyLang() {
   setLang(cfg.lang); setVoiceLevel(cfg.voiceLevel);
   $('#voiceLevelBtn').textContent = t(cfg.voiceLevel === 'full' ? 'btnVlFull' : 'btnVlShort');
   $('#langBtn').textContent = cfg.lang === 'zh' ? 'EN' : '中文';
   $('#voiceBtn').textContent = t(S.voiceOn ? 'btnVoiceOn' : 'btnVoiceOff');
   renderChips(); listCameras(); setFloorUI();
+  $('#curSubj').textContent = `👤 ${subjLabel(S.subjectRec)}`;
   if (S.voiceOn) { stopListening(); startVoice(); }
 }
 $('#langBtn').onclick = () => { cfg.lang = cfg.lang === 'zh' ? 'en' : 'zh'; saveCfg(); applyLang(); fillSettings(); };
@@ -1129,7 +1239,13 @@ $('#signOutBtn').onclick = () => signOut();
   gateUI.hide();                     // AUTH.enabled = false 時也要移除閘門
   $('#userInfo').textContent = S.user?.email ? `${t('signedInAs')}${S.user.name ? S.user.name + ' ' : ''}<${S.user.email}>${S.user.offline ? t('offlineMode') : ''}` : '';
   $('#signOutBtn').hidden = !S.user?.email;
-  S.baseline = (await store.getBaseline(cfg.subject).catch(() => null)) ?? null;
+  let subjects = await store.listSubjects().catch(() => []);
+  if (!subjects.length && cfg.subject && (await store.listSessions().catch(() => [])).some(s => s.subject === cfg.subject)) {
+    await store.saveSubject({ id: cfg.subject, name: '', height_cm: cfg.height_cm, mass_kg: cfg.mass_kg, created: new Date().toISOString() });
+    subjects = await store.listSubjects();
+  }
+  await selectSubject(subjects.find(p => p.id === cfg.subject) || null);
+  showTab(S.subjectRec ? 'test' : 'subject');
   store.requestPersist();
   renderHistory();
 })();

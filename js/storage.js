@@ -1,5 +1,5 @@
 // storage.js — IndexedDB：儲存每次（每天）的拍攝紀錄與 0° 基準；資料只存在本機瀏覽器
-const DB = 'posture-analyzer', VER = 1;
+const DB = 'posture-analyzer', VER = 2;   // v2：新增 subjects（受測者名冊）
 
 function open() {
   return new Promise((res, rej) => {
@@ -11,6 +11,7 @@ function open() {
         s.createIndex('subject', 'subject');
       }
       if (!db.objectStoreNames.contains('baselines')) db.createObjectStore('baselines', { keyPath: 'subject' });
+      if (!db.objectStoreNames.contains('subjects')) db.createObjectStore('subjects', { keyPath: 'id' });
     };
     r.onsuccess = () => res(r.result);
     r.onerror = () => rej(r.error);
@@ -37,6 +38,14 @@ export async function listSessions() {
 export const saveBaseline = b => tx('baselines', 'readwrite', st => st.put(b));
 export const getBaseline = subject => tx('baselines', 'readonly', st => st.get(subject));
 export const deleteBaseline = subject => tx('baselines', 'readwrite', st => st.delete(subject));
+
+// 受測者名冊：{ id, name, sex, birth, height_cm, mass_kg, dominant, notes, created }
+export const saveSubject = p => tx('subjects', 'readwrite', st => st.put(p));
+export const deleteSubject = id => tx('subjects', 'readwrite', st => st.delete(id));
+export async function listSubjects() {
+  const all = await tx('subjects', 'readonly', st => st.getAll());
+  return (all || []).sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id, 'zh-Hant'));
+}
 
 /** 要求持久儲存，避免瀏覽器清除（iOS 7 天未使用可能被清） */
 export async function requestPersist() { try { return await navigator.storage?.persist?.(); } catch { return false; } }

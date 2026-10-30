@@ -116,3 +116,37 @@ details.adv summary { cursor: pointer; color: var(--muted); font-weight: 600; pa
 .stage canvas.editing { touch-action: none; cursor: crosshair; }
 .camsel { min-height: 40px; max-width: min(260px, 100%); border-radius: 10px; }
 button.danger { background: var(--bad); color: #fff; border-color: transparent; font-weight: 600; }
+
+/* ---- v1.8 版面：步驟列、受測者、卡片 ---- */
+header { gap: 8px; flex-wrap: wrap; }
+.hdr-right { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.cursubj { background: rgba(255,255,255,.15); color: inherit; border-color: transparent; font-weight: 600; max-width: 60vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cursubj.none { background: #fde68a; color: #78350f; }
+.iconbtn { font-size: 18px; min-width: 40px; padding: 6px 10px; }
+.iconbtn.on { background: rgba(255,255,255,.25); }
+.tabs.steps button { white-space: nowrap; }
+.subtabs { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+.subtabs button.on { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 700; }
+.row.between { justify-content: space-between; }
+.row input[type=search] { flex: 1; min-width: 180px; min-height: 40px; }
+.card { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--bg); }
+.card h3, .card h4 { margin: 0 0 8px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
+form.card { margin: 10px 0; }
+.subjlist { display: grid; gap: 8px; margin: 10px 0 16px; }
+.subj { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--bg); }
+.subj.cur { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent); }
+.subj small { color: var(--muted); }
+.checks { list-style: none; padding: 0; margin: 0 0 10px; display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.checks li { color: var(--bad); font-weight: 600; }
+.checks li.ok { color: var(--accent); }
+.checks li.opt { color: var(--muted); font-weight: 400; }
+.setupgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; margin-top: 10px; }
+.setupgrid .btns { margin: 0; }
+.testhint { color: var(--warn); font-weight: 600; margin: 0 0 6px; }
+.testhint:empty { display: none; }
+.testhint a { color: inherit; }
+button.big { font-size: 17px; padding: 12px 18px; min-height: 48px; }
+
+/* hidden 屬性一律隱藏（.form 等有 display:grid 會蓋過瀏覽器預設） */
+[hidden] { display: none !important; }
