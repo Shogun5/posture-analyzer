@@ -112,5 +112,6 @@ button.small { min-height: 32px; padding: 4px 10px; font-size: 13px; }
 .mtbl tr.bad td { color: var(--bad); font-weight: 700; }
 details.adv { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 8px; }
 details.adv summary { cursor: pointer; color: var(--muted); font-weight: 600; padding: 6px 0; }
+.stage canvas.editing { touch-action: none; cursor: crosshair; }
 .camsel { min-height: 40px; max-width: min(260px, 100%); border-radius: 10px; }
 button.danger { background: var(--bad); color: #fff; border-color: transparent; font-weight: 600; }

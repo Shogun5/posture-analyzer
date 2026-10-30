@@ -3,7 +3,8 @@ export const STR = {
   zh: {
     appTitle: '人體姿勢分析器',
     tabCapture: '拍攝', tabResults: '結果', tabHistory: '歷史', tabSettings: '設定',
-    btnCamera: '開啟相機', btnCameraOff: '■ 關閉相機', btnFlip: '🔄 切換鏡頭', camAuto: '自動（前/後鏡頭）', camMissing: '找不到選定的鏡頭（可能已拔除），改用前/後鏡頭', btnStartSession: '開始引導拍攝', btnCaptureNow: '立即拍攝',
+    btnCamera: '開啟相機', btnCameraOff: '■ 關閉相機', btnFlip: '🔄 切換鏡頭', btnFloorOff: '井字框：關', btnFloorOn: '井字框：開', btnFloorEdit: '調整井字框', btnFloorDone: '✓ 完成調整', btnFloorReset: '重設井字框',
+    floorHint: '拖動四個藍點對齊地上 A4 紙的四角（遠的兩點在上），拖中間黃點可整個移動，完成後按「完成調整」', camAuto: '自動（前/後鏡頭）', camMissing: '找不到選定的鏡頭（可能已拔除），改用前/後鏡頭', btnStartSession: '開始引導拍攝', btnCaptureNow: '立即拍攝',
     btnNext: '下一個方向', btnRetake: '重拍', btnStop: '停止',
     btnPlumbSensor: '感測器鉛垂', btnPlumbManual: '手動鉛垂(點2點)', btnPlumbReset: '取消鉛垂',
     btnVoiceOn: '語音指令：開', btnVoiceOff: '語音指令：關',
@@ -68,7 +69,8 @@ export const STR = {
   en: {
     appTitle: 'Posture Analyzer',
     tabCapture: 'Capture', tabResults: 'Results', tabHistory: 'History', tabSettings: 'Settings',
-    btnCamera: 'Start camera', btnCameraOff: '■ Stop camera', btnFlip: '🔄 Switch camera', camAuto: 'Auto (front/rear)', camMissing: 'Selected camera not found (unplugged?) — using front/rear', btnStartSession: 'Start guided session', btnCaptureNow: 'Capture now',
+    btnCamera: 'Start camera', btnCameraOff: '■ Stop camera', btnFlip: '🔄 Switch camera', btnFloorOff: 'Floor grid: OFF', btnFloorOn: 'Floor grid: ON', btnFloorEdit: 'Adjust grid', btnFloorDone: '✓ Done', btnFloorReset: 'Reset grid',
+    floorHint: 'Drag the four blue dots onto the corners of the A4 sheet on the floor (far corners on top); drag the yellow centre dot to move it. Tap Done when finished.', camAuto: 'Auto (front/rear)', camMissing: 'Selected camera not found (unplugged?) — using front/rear', btnStartSession: 'Start guided session', btnCaptureNow: 'Capture now',
     btnNext: 'Next view', btnRetake: 'Retake', btnStop: 'Stop',
     btnPlumbSensor: 'Sensor plumb', btnPlumbManual: 'Manual plumb (tap 2)', btnPlumbReset: 'Clear plumb',
     btnVoiceOn: 'Voice cmd: ON', btnVoiceOff: 'Voice cmd: OFF',
