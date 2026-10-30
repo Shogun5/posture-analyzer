@@ -16,7 +16,7 @@ import { requireAuth, signOut, useRedirectMode, redirectMode } from './auth.js';
 import { loadModule, wrapModule } from './ectmodule.js';
 import { renderPhoto, composeBoard, meanSDTable, varLabel } from './posturecard.js';
 
-export const APP_VERSION = '1.4.0'; // 與 sw.js 的 CACHE 版本一起更新
+export const APP_VERSION = '1.4.1'; // 與 sw.js 的 CACHE 版本一起更新
 
 const $ = s => document.querySelector(s);
 const fin = Number.isFinite;
@@ -242,16 +242,16 @@ function bodyYaw(w) {
 function alignmentCue(det, detView) {
   if (!det) return 'noPerson';
   const n = det.norm, view = curView(), thr = cfg.visThr;
-  const feetVis = [27, 28, 29, 30].reduce((s, i) => s + n[i][3], 0) / 4;
+  const feetVis = Math.max(...[27, 28, 29, 30].map(i => n[i][3]));
   const shY = (n[11][1] + n[12][1]) / 2, top = n[0][1] - (shY - n[0][1]) * 0.9;
   const bottom = Math.max(n[29][1], n[30][1], n[27][1], n[28][1]);
-  const headCut = top < 0.01, feetCut = bottom > 0.99 || feetVis < thr;
-  // 頭或腳出界：只有一邊出界且另一邊還有空間 → 調整手機角度；兩邊都滿 → 站遠一點
+  // 出界只看位置（腳的可信度在遠處常偏低，不能拿來判斷「太近」，否則會一下叫前進一下叫後退）
+  const headCut = top < 0.005, feetCut = bottom > 0.985 || (feetVis < 0.2 && bottom > 0.9);
   if (headCut && feetCut) return 'backUp';
   if (headCut) return bottom < 0.9 ? 'camUp' : 'backUp';
   if (feetCut) return top > 0.1 ? 'camDown' : 'backUp';
-  if (bottom - top > 0.96) return 'backUp';
-  if (bottom - top < 0.5) return 'comeCloser';
+  // 距離：可接受範圍放寬（人高佔畫面 40%–98%），避免前後來回
+  if (bottom - top < 0.4) return 'comeCloser';
   // 左右置中：換算成受測者自己的方向（正面時影像右 = 受測者左；背面相反；側面為前後）
   const cx = (n[23][0] + n[24][0]) / 2;
   if (cx < 0.3 || cx > 0.7) {
@@ -259,7 +259,14 @@ function alignmentCue(det, detView) {
     return { front: toImgRight ? 'moveLeft' : 'moveRight', back: toImgRight ? 'moveRight' : 'moveLeft',
       right: toImgRight ? 'moveFwd' : 'moveBwd', left: toImgRight ? 'moveBwd' : 'moveFwd' }[view];
   }
-  if (detView !== view) return `turn_${view}`;
+  // 方向：正/背面只要求「正對或背對」（臉沒偵測到時正面常被誤判為背面，左右由 enforceLR 修正）；
+  // 側面才分左右。若同一個轉身提示持續 6 秒仍不符，視為偵測誤差直接放行
+  const planeOK = detView && isSag(detView) === isSag(view);
+  const dirOK = planeOK && (!isSag(view) || detView === view);
+  if (!dirOK) {
+    S.turnSince ||= performance.now();
+    if (!planeOK || performance.now() - S.turnSince < 6000) return `turn_${view}`;
+  } else S.turnSince = 0;
   // 細部轉向：身體朝向與目標差 20–60°（> 60° 多半是背面左右標反，不採用）；同一提示超過 8 秒就放行
   const yaw = bodyYaw(det.wlm);
   if (fin(yaw)) {
@@ -294,7 +301,7 @@ function gestureFired(det, now) {
 function setPhase(p) { S.phase = p; renderChips(); }
 
 function enterAlign() {
-  setPhase('align'); S.okSince = 0; S.readyAnnounced = false; S.lastCue = performance.now() + 3000; S.yaw = NaN; S.fineSince = 0;
+  setPhase('align'); S.okSince = 0; S.readyAnnounced = false; S.lastCue = performance.now() + 3000; S.yaw = NaN; S.fineSince = 0; S.turnSince = 0;
   say(`view_${curView()}`, { interrupt: true });
 }
 
@@ -363,7 +370,7 @@ async function finishRecording() {
   S.photo = null;
   S.session.plumbMode = S.plumbMode; S.session.up = S.up;
   S.viewSession = S.session;
-  beep(880, 120); speak(`${v('view_' + view).split(/[。.]/)[0]}${getLang() === 'en' ? '. ' : ''}${v('viewDone')}`, { interrupt: true });
+  beep(880, 120); speak(`${v('view_' + view).split(/[，。,.]/)[0]}${getLang() === 'en' ? '. ' : ''}${v('viewDone')}`, { interrupt: true });
   const nFlags = flags.filter(f => f.sev !== 'info').length;
   toast(`${t('view_' + view)} ✓  ${t('flags')}: ${nFlags}`);
   // 腳不在畫面：比例尺/原點改用替代方法，下肢與鉛垂偏移指標無法計算 → 畫面與語音提醒
