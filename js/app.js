@@ -10,13 +10,13 @@ import * as store from './storage.js';
 import { timeSeries, trend, chartPNG } from './charts.js';
 import { downloadCSV, downloadVideos, download, dataURLtoBlob, reportHTML, KEY_VARS, fileBase } from './export.js';
 import { sgDerivative } from './filters.js';
-import { MOVES, BASE_SEC, timeline, demoValueAt, cueText, analyzeRom, asymmetry } from './rom.js';
+import { MOVES, BASE_SEC, timeline, demoValueAt, cueText, analyzeRom, asymmetry, romSnapCaption } from './rom.js';
 import { createDemo } from './romdemo.js';
 import { requireAuth, signOut, useRedirectMode, redirectMode } from './auth.js';
 import { loadModule, wrapModule } from './ectmodule.js';
 import { renderPhoto, composeBoard, meanSDTable, varLabel } from './posturecard.js';
 
-export const APP_VERSION = '1.5.0'; // 與 sw.js 的 CACHE 版本一起更新
+export const APP_VERSION = '1.5.1'; // 與 sw.js 的 CACHE 版本一起更新
 
 const $ = s => document.querySelector(s);
 const fin = Number.isFinite;
@@ -209,6 +209,8 @@ function loop(now) {
   if (S.phase === 'record') banner = `REC ${((now - S.recStart) / 1000).toFixed(1)} s`;
   drawOverlay(ctx, { lm, view, up: S.up, scale: S.liveScale, vars, trails: S.trails, vel, height_m: cfg.height_cm / 100, visThr: cfg.visThr, panel, banner });
   if (S.phase === 'record' && !S.runningMarked) { S.runningMarked = true; crumb('rec_running'); }
+  // ROM 快照在疊圖之後拍，照片上才有骨架與角度
+  if (S.mode === 'rom' && S.rom?.wantSnap && S.phase === 'record') { romSnap(S.rom.wantSnap); S.rom.wantSnap = null; }
 
   // 快照：記錄中段（姿勢模式；ROM 模式在口令「停住」結束時拍）
   if (S.mode !== 'rom' && S.phase === 'record' && !S.snapTaken && lm && now - S.recStart > cfg.captureSec * 500) {
@@ -461,7 +463,8 @@ function stepRom(now, det, detView, vars) {
       if (!k.cue) continue;
       const txt = cueText(m, k.cue, lang, getVoiceLevel() !== 'full');
       speak(txt, { interrupt: true }); $('#msg').textContent = txt;
-      if (k.cue === 'back') romSnap('pos'); else if (k.cue === 'back2') romSnap('neg');
+      // 後備：若最大角度時沒拍到，口令「回來」時補拍
+      if (k.cue === 'back' && !S.rom.snaps.pos) S.rom.wantSnap = 'pos'; else if (k.cue === 'back2' && !S.rom.snaps.neg) S.rom.wantSnap = 'neg';
     }
     // 即時角度（相對開始 1.5 s 的靜態基準）
     for (const vd of m.vars) {
@@ -471,6 +474,16 @@ function stepRom(now, det, detView, vars) {
       // 即時顯示與結果一致：絕對角度（鉛垂/解剖中立 = 0°）；頸屈伸（ref = start）才扣起始姿勢
       L.cur = m.ref === 'start' ? val - (L.base.length ? avg(L.base) : val) : val;
       if (el >= BASE_SEC) { L.max = Math.max(L.max, L.cur); L.min = Math.min(L.min, L.cur); }
+    }
+    // 兩個方向都在「達到最大角度」的瞬間拍照（含骨架與角度標示），供事後檢查量測是否合理
+    if (el >= BASE_SEC) {
+      const seg = m.neg && el >= keys.find(k => k.cue === 'neg').t ? 'neg' : 'pos';
+      const cur = m.vars.map(vd => S.rom.live[vd.name]?.cur).filter(fin);
+      if (cur.length) {
+        const val = avg(cur), best = (S.rom.peak ??= {})[seg];
+        const better = !fin(best) || (seg === 'pos' ? val > best + 1 : val < best - 1);
+        if (better && now - (S.rom.lastSnapT || 0) > 300) { S.rom.peak[seg] = val; S.rom.wantSnap = seg; S.rom.lastSnapT = now; }
+      }
     }
     if (el >= duration) finishRomRecording();
   } else if (S.phase === 'done') demoT = 0;
@@ -494,7 +507,7 @@ function romSnap(key) {
 function startRomRecording(now) {
   crumb('rec_audio');
   if (!cfg.quietRec) beep(1046, 250);
-  S.recFrames = []; S.recStart = now; S.rom.cueIdx = 0; S.rom.live = {}; S.rom.snaps = {}; S.runningMarked = false;
+  S.recFrames = []; S.recStart = now; S.rom.cueIdx = 0; S.rom.live = {}; S.rom.snaps = {}; S.rom.peak = {}; S.rom.wantSnap = null; S.rom.lastSnapT = 0; S.runningMarked = false;
   S.recorder = new CanvasRecorder(canvas, 30, cfg.videoFmt);
   crumb('rec_recorder', { mime: S.recorder.mime });
   try { S.recorder.start(); } catch (e) { console.warn('recorder', e); S.recorder = null; }
@@ -779,9 +792,9 @@ function renderRom() {
   $('#romAsym').innerHTML = asym.length ? `<table class="tbl"><tr><th>${t('romMove')}</th><th>${t('right')}</th><th>${t('left')}</th><th>${t('asymPct')}</th></tr>${asym.map(a => `<tr><td>${a.label}</td><td>${f(a.R)}</td><td>${f(a.L)}</td><td class="${a.asymPct > 15 ? 'low' : a.asymPct > 10 ? 'warn' : ''}">${a.asymPct.toFixed(0)}%</td></tr>`).join('')}</table>` : '';
   const prev = $('#romSel').value;
   $('#romSel').innerHTML = ids.map(id => `<option value="${id}" ${id === prev ? 'selected' : ''}>${romName(MOVES.find(x => x.id === id))}</option>`).join('');
-  $('#romSnaps').innerHTML = ids.flatMap(id => Object.entries(R[id].snapshots || {}).map(([k, u]) => {
-    const m = MOVES.find(x => x.id === id), d = k === 'pos' ? m.pos : m.neg;
-    return `<figure><img src="${u}" alt=""><figcaption>${romName(m)} · ${en ? d.en : d.zh}</figcaption></figure>`;
+  $('#romSnaps').innerHTML = ids.flatMap(id => ['pos', 'neg'].filter(k => R[id].snapshots?.[k]).map(k => {
+    const m = MOVES.find(x => x.id === id);
+    return `<figure><img src="${R[id].snapshots[k]}" alt=""><figcaption>${romSnapCaption(m, R[id], k, en)}</figcaption></figure>`;
   })).join('');
   drawRomChart();
 }

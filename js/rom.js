@@ -190,6 +190,16 @@ export function analyzeRom(m, frames, ctx) {
   return out;
 }
 
+/** 快照說明：動作名稱 · 方向 + 量到的最大角度（雙側動作列出左右），例如「雙肩 外展／內收 · 內收 右 30° 左 28°」 */
+export function romSnapCaption(m, res, k, en) {
+  const d = k === 'pos' ? m.pos : m.neg;
+  const vals = Object.values(res?.metrics || {}).map(mt => {
+    const x = k === 'pos' ? mt.pos : -mt.neg, side = mt.side === 'R' ? (en ? 'R ' : '右 ') : mt.side === 'L' ? (en ? 'L ' : '左 ') : '';
+    return Number.isFinite(x) ? `${side}${x.toFixed(0)}°` : '';
+  }).filter(Boolean).join(' ');
+  return `${en ? m.en : m.zh} · ${en ? d.en : d.zh} ${vals}`;
+}
+
 /** 左右不對稱：成對動作（R_/L_ 或雙側同時測）回傳 [{label, R, L, asymPct}] */
 export function asymmetry(romResults) {
   const rows = [];

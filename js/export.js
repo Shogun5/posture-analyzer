@@ -1,7 +1,7 @@
 // export.js — 匯出：CSV（長格式）、影片、PNG、HTML 報告（可列印為 PDF）。全部在本機產生下載。
 import { LM_NAMES, VIEWS } from './biomech.js';
 import { t, getLang } from './i18n.js';
-import { MOVES, asymmetry } from './rom.js';
+import { MOVES, asymmetry, romSnapCaption } from './rom.js';
 import { meanSD, meanSDTable } from './posturecard.js';
 
 export function download(data, filename, type = 'application/octet-stream') {
@@ -87,7 +87,11 @@ function romSection(s, compare) {
     }
   }
   const asym = asymmetry(R).map(a => `<tr><td>${a.label}</td><td>${f(a.R)}</td><td>${f(a.L)}</td><td>${a.asymPct.toFixed(0)}%</td></tr>`).join('');
-  const snaps = MOVES.filter(m => R[m.id]?.snapshots?.pos).map(m => `<figure style="display:inline-block;margin:4px;width:180px"><img src="${R[m.id].snapshots.pos}" style="width:100%"><figcaption style="font-size:11px">${escH(en ? m.en : m.zh)}</figcaption></figure>`).join('');
+  // 每個動作的兩個方向（正向／反向最大角度時的照片）並排，方便檢查量測
+  const snaps = MOVES.filter(m => R[m.id]?.snapshots).map(m => {
+    const figs = ['pos', 'neg'].filter(k => R[m.id].snapshots[k]).map(k => `<figure style="display:inline-block;margin:4px;width:240px;vertical-align:top"><img src="${R[m.id].snapshots[k]}" style="width:100%"><figcaption style="font-size:11px">${escH(romSnapCaption(m, R[m.id], k, en))}</figcaption></figure>`).join('');
+    return figs ? `<div style="page-break-inside:avoid">${figs}</div>` : '';
+  }).join('');
   return `<section><h2>AROM</h2><table><tr><th>${t('romMove')}</th><th>${t('side')}</th><th>${t('romStart')}</th><th>+ (${t('norm')})</th><th>− (${t('norm')})</th><th>${t('romTotal')}</th><th>${t('validPct')}</th>${C ? `<th>${t('preRom')}</th>` : ''}</tr>${rows}</table>
     ${asym ? `<h3>${t('asym')}</h3><table><tr><th></th><th>${t('right')}</th><th>${t('left')}</th><th>${t('asymPct')}</th></tr>${asym}</table>` : ''}
     <p class="qc">${t('romRefNote')}</p>${snaps}</section>`;
