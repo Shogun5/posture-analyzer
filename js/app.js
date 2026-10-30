@@ -16,7 +16,7 @@ import { requireAuth, signOut, useRedirectMode, redirectMode } from './auth.js';
 import { loadModule, wrapModule } from './ectmodule.js';
 import { renderPhoto, composeBoard, meanSDTable, varLabel } from './posturecard.js';
 
-export const APP_VERSION = '1.5.1'; // 與 sw.js 的 CACHE 版本一起更新
+export const APP_VERSION = '1.5.2'; // 與 sw.js 的 CACHE 版本一起更新
 
 const $ = s => document.querySelector(s);
 const fin = Number.isFinite;
@@ -25,7 +25,7 @@ const fin = Number.isFinite;
 const DEF = {
   lang: 'zh', subject: 'S01', height_cm: 170, mass_kg: 65, model: 'heavy', facing: 'environment', res: '720',
   captureSec: 5, countdownSec: 5, visThr: 0.5, mirrorFix: false, autoCapture: true, gesture: true, rawLm: false, thr: DEFAULT_THR,
-  delegate: 'GPU', videoFmt: 'auto', voiceLevel: 'short',
+  delegate: 'GPU', videoFmt: 'auto', voiceLevel: 'short', deviceId: '',
 };
 let cfg = loadCfg();
 function loadCfg() {
@@ -96,14 +96,21 @@ async function startCamera() {
     S.stream?.getTracks().forEach(tr => tr.stop());
     crumb('camera');
     const h = +cfg.res;
-    const constraints = mode => ({
-      audio: false,
-      video: { facingMode: { [mode]: cfg.facing }, height: { ideal: h }, width: { ideal: Math.round(h * 16 / 9) }, frameRate: { ideal: 30, max: 30 } },
-    });
+    const size = { height: { ideal: h }, width: { ideal: Math.round(h * 16 / 9) }, frameRate: { ideal: 30, max: 30 } };
+    const constraints = mode => ({ audio: false, video: { facingMode: { [mode]: cfg.facing }, ...size } });
+    S.stream = null;
+    // 指定了某一顆鏡頭（外接 USB 鏡頭等）：用 deviceId；拔掉了就退回前/後鏡頭
+    if (cfg.deviceId) {
+      try { S.stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { deviceId: { exact: cfg.deviceId }, ...size } }); }
+      catch (e) { if (e.name !== 'OverconstrainedError' && e.name !== 'NotFoundError') throw e; toast(t('camMissing')); cfg.deviceId = ''; saveCfg(); }
+    }
     // 先要求指定鏡頭（exact）；只有一顆鏡頭的裝置（筆電）退回 ideal
-    try { S.stream = await navigator.mediaDevices.getUserMedia(constraints('exact')); }
-    catch (e) { if (e.name !== 'OverconstrainedError' && e.name !== 'NotFoundError') throw e; S.stream = await navigator.mediaDevices.getUserMedia(constraints('ideal')); }
+    if (!S.stream) {
+      try { S.stream = await navigator.mediaDevices.getUserMedia(constraints('exact')); }
+      catch (e) { if (e.name !== 'OverconstrainedError' && e.name !== 'NotFoundError') throw e; S.stream = await navigator.mediaDevices.getUserMedia(constraints('ideal')); }
+    }
     video.srcObject = S.stream;
+    listCameras();                 // 取得權限後才看得到鏡頭名稱
     video.setAttribute('playsinline', ''); video.muted = true;    // iOS 必要
     await video.play();
     await ensureModel();
@@ -112,6 +119,26 @@ async function startCamera() {
     if (!S.looping) { S.looping = true; requestAnimationFrame(loop); }
     setCamButton(true);
   } catch (e) { crumb('idle'); toast(t('camErr') + e.message); console.error(e); }
+}
+
+/** 鏡頭選單：自動（前/後鏡頭）＋ 每一顆偵測到的鏡頭（含外接 USB 鏡頭） */
+async function listCameras() {
+  let cams = [];
+  try { cams = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput'); } catch { /* ignore */ }
+  const cur = S.stream?.getVideoTracks()[0]?.getSettings?.().deviceId;
+  const sel = $('#camSel');
+  sel.innerHTML = `<option value="">${t('camAuto')}</option>` + cams.map((d, i) => `<option value="${d.deviceId}">${d.label || `${t('camera')} ${i + 1}`}</option>`).join('');
+  sel.value = cfg.deviceId && cams.some(d => d.deviceId === cfg.deviceId) ? cfg.deviceId : '';
+  sel.title = cur ? (cams.find(d => d.deviceId === cur)?.label || '') : '';
+  S.cams = cams;
+}
+navigator.mediaDevices?.addEventListener?.('devicechange', listCameras);   // 插拔外接鏡頭時更新清單
+function useCamera(deviceId) {
+  if (S.phase === 'record' || S.phase === 'countdown') return;
+  cfg.deviceId = deviceId; saveCfg();
+  if (S.plumbMode !== 'none') { S.up = [0, -1]; S.plumbMode = 'none'; }   // 換鏡頭後鉛垂需重新校正
+  S.liveScale = NaN; Object.values(S.trails).forEach(a => (a.length = 0));
+  if (S.stream) startCamera();
 }
 
 /** 關閉相機：中止進行中的拍攝/ROM 測試、停止串流與分析迴圈、清空畫面（已完成的結果保留） */
@@ -900,14 +927,23 @@ function applyLang() {
   $('#voiceLevelBtn').textContent = t(cfg.voiceLevel === 'full' ? 'btnVlFull' : 'btnVlShort');
   $('#langBtn').textContent = cfg.lang === 'zh' ? 'EN' : '中文';
   $('#voiceBtn').textContent = t(S.voiceOn ? 'btnVoiceOn' : 'btnVoiceOff');
-  renderChips();
+  renderChips(); listCameras();
   if (S.voiceOn) { stopListening(); startVoice(); }
 }
 $('#langBtn').onclick = () => { cfg.lang = cfg.lang === 'zh' ? 'en' : 'zh'; saveCfg(); applyLang(); fillSettings(); };
 $('#camBtn').onclick = () => (S.stream ? stopCamera() : startCamera());
 // 前/後鏡頭切換：存入設定；相機已開則立即重啟。鉛垂校正與鏡頭方向有關，切換後需重新校正
+$('#camSel').onchange = e => { useCamera(e.target.value); toast(`${t('camera')}: ${e.target.selectedOptions[0]?.textContent || ''}`); };
 $('#flipBtn').onclick = () => {
   if (S.phase === 'record' || S.phase === 'countdown') return;
+  // 已選定某顆鏡頭，或有 3 顆以上（例如手機 + 外接）：依序輪換每一顆鏡頭
+  if (cfg.deviceId || (S.cams?.length ?? 0) > 2) {
+    const ids = (S.cams || []).map(d => d.deviceId); if (!ids.length) return;
+    const next = ids[(ids.indexOf(cfg.deviceId) + 1) % ids.length];
+    useCamera(next); $('#camSel').value = next;
+    toast(`${t('camera')}: ${S.cams.find(d => d.deviceId === next)?.label || ''}`);
+    return;
+  }
   cfg.facing = cfg.facing === 'user' ? 'environment' : 'user';
   saveCfg(); fillSettings();
   if (S.plumbMode !== 'none') { S.up = [0, -1]; S.plumbMode = 'none'; }
