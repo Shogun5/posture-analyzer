@@ -93,5 +93,6 @@ button.small { min-height: 32px; padding: 4px 10px; font-size: 13px; }
 .gatemsg.bad { color: #fecaca; }
 .gsibtn { display: flex; justify-content: center; min-height: 44px; }
 .gate .hint a { color: #99f6e4; font-size: 13px; }
+.gatediag { font: 11px ui-monospace, monospace; color: #94a3b8; margin: 10px 0 0; word-break: break-all; }
 .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #111827; color: #fff; padding: 8px 16px; border-radius: 999px; opacity: 0; transition: opacity .25s; pointer-events: none; max-width: 90vw; }
 .toast.show { opacity: .95; }

@@ -20,9 +20,26 @@ const clear = () => {
 
 async function call(body) {
   // text/plain = 簡單請求，不觸發 CORS 預檢；Apps Script 回應帶 Access-Control-Allow-Origin: *
-  const r = await fetch(AUTH.scriptUrl, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ ...body, ua: navigator.userAgent }) });
-  return r.json();
+  // 20 秒逾時：手機網路卡住時不要永遠停在「確認中」
+  const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 20000);
+  try {
+    const r = await fetch(AUTH.scriptUrl, { method: 'POST', signal: ctl.signal, headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ ...body, ua: navigator.userAgent }) });
+    return await r.json();
+  } catch (e) { throw e.name === 'AbortError' ? new Error('timeout (20 s)') : e; }
+  finally { clearTimeout(timer); }
 }
+
+// 主畫面 App（standalone）或手機：Google 彈出視窗常開在另一個分頁、結果傳不回來 → 預設用頁面跳轉登入
+const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const isMobile = () => /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+export function redirectMode() {
+  let v = null; try { v = localStorage.getItem(MODE_KEY); } catch { /* ignore */ }
+  return v === '1' || (v !== '0' && (isStandalone() || isMobile()));
+}
+
+// 登入畫面下方的診斷列：版本、模式、步驟、錯誤（使用者截圖回報用）
+const diag = { step: 'start', err: '' };
+function note(ui, step, err = '') { diag.step = step; if (err) diag.err = err; ui.diag?.(`${redirectMode() ? 'redirect' : 'popup'} · ${isStandalone() ? 'app' : 'browser'} · ${diag.step}${diag.err ? ' · ' + diag.err : ''}`); }
 
 function loadGis() {
   if (window.google?.accounts?.id) return Promise.resolve();
@@ -38,7 +55,7 @@ export function signOut() {
   try { window.google?.accounts?.id?.disableAutoSelect(); } catch { /* ignore */ }
   location.reload();
 }
-export function useRedirectMode(on) { try { on ? localStorage.setItem(MODE_KEY, '1') : localStorage.removeItem(MODE_KEY); } catch { /* ignore */ } location.reload(); }
+export function useRedirectMode(on) { try { localStorage.setItem(MODE_KEY, on ? '1' : '0'); } catch { /* ignore */ } location.reload(); }
 
 /**
  * 通過驗證才 resolve；否則停在閘門畫面。
@@ -53,45 +70,53 @@ export async function requireAuth(ui) {
   if (h.has('session') || h.has('denied')) {
     if (h.get('session')) save({ session: h.get('session'), exp: 0 });
     history.replaceState(null, '', location.pathname + location.search);
-    if (h.get('denied')) ui.show('denied', h.get('denied'));
+    if (h.get('denied')) { note(ui, 'redirect-back', 'denied:' + h.get('denied')); ui.show('denied', h.get('denied')); }
+    else note(ui, 'redirect-back');
   }
 
   const a = current();
   if (a?.session) {
-    ui.show('checking');
+    ui.show('checking'); note(ui, 'checking');
     try {
       const r = await call({ action: 'check', session: a.session });
       if (r.ok) { save({ ...a, email: r.email, name: r.name, exp: r.exp, checked: Date.now() }); ui.hide(); return r; }
-      clear(); ui.show('denied', r.reason);
+      clear(); note(ui, 'check-denied', r.reason); ui.show('denied', r.reason);
     } catch (e) {
       // 離線或伺服器連不到：在 session 期限內放行（PWA 離線使用）
       if (a.exp > Date.now()) { ui.hide(); return { ...a, offline: true }; }
-      ui.show('error', e.message);
+      note(ui, 'check-failed', e.message); ui.show('error', e.message);
     }
   }
+
+  // 主畫面 App 的登入若在另一個 Chrome 分頁完成（同一份 localStorage），這裡收到通知就重新載入
+  addEventListener('storage', ev => { if (ev.key === KEY && ev.newValue) location.reload(); });
+  addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && current()?.session) location.reload(); });
 
   // 需要登入
   return new Promise(resolve => {
     if (ui.state !== 'denied' && ui.state !== 'error') ui.show('login');   // 被拒時保留原因，但仍顯示登入鈕（可換帳號）
+    note(ui, 'loading-google');
     loadGis().then(() => {
-      const redirect = (() => { try { return localStorage.getItem(MODE_KEY) === '1'; } catch { return false; } })();
+      const redirect = redirectMode();
+      note(ui, 'ready');
       google.accounts.id.initialize({
         client_id: AUTH.clientId,
         ux_mode: redirect ? 'redirect' : 'popup',
         ...(redirect ? { login_uri: AUTH.scriptUrl } : {
           callback: async ({ credential }) => {
-            ui.show('checking');
+            ui.show('checking'); note(ui, 'got-google-token');
             try {
               const r = await call({ action: 'login', idToken: credential });
               if (r.ok) { save({ session: r.session, exp: r.exp, email: r.email, name: r.name, checked: Date.now() }); ui.hide(); resolve(r); }
-              else ui.show('denied', r.reason, r.email);
-            } catch (e) { ui.show('error', e.message); }
+              else { note(ui, 'login-denied', r.reason); ui.show('denied', r.reason, r.email); }
+            } catch (e) { note(ui, 'login-failed', e.message); ui.show('error', e.message); }
           },
         }),
         auto_select: false,
         itp_support: true,
       });
-      google.accounts.id.renderButton(ui.buttonEl, { theme: 'filled_blue', size: 'large', shape: 'pill', text: 'signin_with', locale: ui.lang === 'en' ? 'en' : 'zh-TW' });
-    }).catch(e => ui.show('error', e.message));
+      google.accounts.id.renderButton(ui.buttonEl, { theme: 'filled_blue', size: 'large', shape: 'pill', text: 'signin_with', locale: ui.lang === 'en' ? 'en' : 'zh-TW',
+        click_listener: () => note(ui, 'button-clicked') });
+    }).catch(e => { note(ui, 'google-load-failed', e.message); ui.show('error', e.message); });
   });
 }

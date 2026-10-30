@@ -12,10 +12,10 @@ import { downloadCSV, downloadVideos, download, dataURLtoBlob, reportHTML, KEY_V
 import { sgDerivative } from './filters.js';
 import { MOVES, BASE_SEC, timeline, demoValueAt, cueText, analyzeRom, asymmetry } from './rom.js';
 import { createDemo } from './romdemo.js';
-import { requireAuth, signOut, useRedirectMode } from './auth.js';
+import { requireAuth, signOut, useRedirectMode, redirectMode } from './auth.js';
 import { loadModule, wrapModule } from './ectmodule.js';
 
-export const APP_VERSION = '1.3.0'; // 與 sw.js 的 CACHE 版本一起更新
+export const APP_VERSION = '1.3.1'; // 與 sw.js 的 CACHE 版本一起更新
 
 const $ = s => document.querySelector(s);
 const fin = Number.isFinite;
@@ -803,10 +803,11 @@ const gateUI = {
     el.textContent = msg;
     el.classList.toggle('bad', state === 'denied' || state === 'error' || state === 'setup');
     $('#gsiBtn').hidden = !['login', 'denied'].includes(state);
-    let redirect = false; try { redirect = localStorage.getItem('pa.authRedirect') === '1'; } catch { /* ignore */ }
+    const redirect = redirectMode();
     $('#gateRedirect').textContent = ['login', 'denied'].includes(state) ? t(redirect ? 'gateRedirectOff' : 'gateRedirectOn') : '';
     $('#gateRedirect').onclick = e => { e.preventDefault(); useRedirectMode(!redirect); };
   },
+  diag(txt) { $('#gateDiag').textContent = `v${APP_VERSION} · ${txt}`; },
   hide() { this.state = 'ok'; $('#gate').classList.add('hidden'); },
 };
 $('#signOutBtn').onclick = () => signOut();
