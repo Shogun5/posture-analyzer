@@ -4,7 +4,7 @@ import { createPose, detect, MP_VERSION } from './pose.js';
 import { VIEWS, isSag, makeTransform, computeVars, computeCOM, detectView, enforceLR, upFromGravity, processRecording, EYE_HEIGHT_RATIO } from './biomech.js';
 import { assessPosture, DEFAULT_THR } from './posture.js';
 import { drawOverlay, flushText } from './overlay.js';
-import { speak, beep, unlockAudio, startListening, stopListening, speechSupported, isSpeaking } from './voice.js';
+import { speak, beep, unlockAudio, startListening, stopListening, speechSupported, isSpeaking, setSpeechRate } from './voice.js';
 import { CanvasRecorder } from './recorder.js';
 import * as store from './storage.js';
 import { timeSeries, trend, chartPNG } from './charts.js';
@@ -17,9 +17,10 @@ import { loadModule, wrapModule } from './ectmodule.js';
 import { renderPhoto, composeBoard, meanSDTable, varLabel } from './posturecard.js';
 import { refForFlag, refForMove, refForAsym, CAPSULAR } from './reflinks.js';
 import { initFeedback, initErrorReporting } from './feedback.js';
+import { exportBackup, importBackup } from './backup.js';
 import { DEFAULT_FLOOR, drawFloorGuide, floorHandles, dragFloor, floorQuad } from './floorguide.js';
 
-export const APP_VERSION = '1.10.0'; // 與 sw.js 的 CACHE 版本一起更新
+export const APP_VERSION = '1.11.0'; // 與 sw.js 的 CACHE 版本一起更新
 
 const $ = s => document.querySelector(s);
 const fin = Number.isFinite;
@@ -28,7 +29,7 @@ const fin = Number.isFinite;
 const DEF = {
   lang: 'zh', subject: 'S01', height_cm: 170, mass_kg: 65, model: 'heavy', facing: 'environment', res: '720',
   captureSec: 5, countdownSec: 5, visThr: 0.5, mirrorFix: false, autoCapture: true, gesture: true, rawLm: false, thr: DEFAULT_THR,
-  delegate: 'GPU', videoFmt: 'auto', voiceLevel: 'short', deviceId: '', floorOn: false, floor: { ...DEFAULT_FLOOR }, showTrails: false, mirrorView: false,
+  delegate: 'GPU', videoFmt: 'auto', voiceLevel: 'short', deviceId: '', pace: 'normal', floorOn: false, floor: { ...DEFAULT_FLOOR }, showTrails: false, mirrorView: false,
 };
 let cfg = loadCfg();
 function loadCfg() {
@@ -71,6 +72,12 @@ function recoverFromCrash() {
 
 // ---------------- 自動錯誤回報 ----------------
 const errRep = initErrorReporting({ ver: APP_VERSION, step: () => { try { return `${S.tab || ''}/${S.mode}/${S.phase}`; } catch { return 'init'; } } });
+
+// ---------------- 節奏（給長者用的慢速模式） ----------------
+// 標準 1、慢速 1.5、更慢 2：動作時間軸、倒數、換面等待、提示間隔都乘上這個倍率；語音說話速度另外放慢
+const PACE = { normal: { k: 1, rate: 1 }, slow: { k: 1.5, rate: 0.8 }, slower: { k: 2, rate: 0.65 } };
+const paceK = () => (PACE[cfg.pace] || PACE.normal).k;
+const romSlow = () => (S.rom?.prom ? 1.5 : 1) * paceK();
 
 // ---------------- 狀態 ----------------
 const S = {
@@ -401,11 +408,11 @@ function stepStateMachine(now, det, detView) {
     $('#msg').textContent = S.voiceOn ? `${t('view_' + curView())}\n${cue ? v(cue) : '✓ ' + t('holdStill')}` : (cue ? v(cue) : '✓');
     if (cue) {
       S.okSince = 0;
-      if (now - S.lastCue > 3500 && !isSpeaking()) { say(cue); S.lastCue = now; }
+      if (now - S.lastCue > 3500 * paceK() && !isSpeaking()) { say(cue); S.lastCue = now; }
     } else {
       S.okSince ||= now;
-      if (now - S.okSince > 1000) {
-        if (cfg.autoCapture) { say('readyAuto', { interrupt: true }); startCountdown(cfg.countdownSec); }
+      if (now - S.okSince > 1000 * paceK()) {
+        if (cfg.autoCapture) { say('readyAuto', { interrupt: true }); startCountdown(Math.round(cfg.countdownSec * paceK())); }
         else if (!S.readyAnnounced) { S.readyAnnounced = true; say('readyManual'); }
       }
     }
@@ -469,7 +476,7 @@ async function finishRecording() {
     if (next >= 0) {
       S.viewIdx = next; renderChips();
       if (S.voiceOn) $('#msg').textContent = `${t('view_' + view)} ✓\n${t('nextView')}${t('view_' + VIEWS[next])}`;
-      setTimeout(() => { if (S.guided && S.phase === 'done') enterAlign(); }, 1800);
+      setTimeout(() => { if (S.guided && S.phase === 'done') enterAlign(); }, 1800 * paceK());
     }
     else { S.guided = false; setPhase('idle'); say('allDone'); $('#msg').textContent = S.voiceOn ? t('allDoneShort') : ''; await saveCurrent(true); showResults('posture'); }
   } else setPhase('idle');
@@ -528,7 +535,7 @@ function enterRomIntro(queue = false) {
   S.rom.lastView = m.view;
   const pre = S.rom.prom ? 'PROM ' : '';
   speak(`${turn}${pre}${full ? `${S.rom.idx + 1}. ${name}。${S.rom.prom ? v('promHow') : en ? m.introEn : m.introZh}` : `${name}。`}`, { interrupt: !queue });
-  if (turn) S.rom.phaseStart += 3000;                // 多留 3 秒轉身
+  if (turn) S.rom.phaseStart += 3000 * paceK();      // 多留時間轉身（慢速模式更久）
   $('#msg').textContent = `${turn ? `${t('view_' + m.view)}：${turn}\n` : ''}${pre}${S.rom.idx + 1}/${S.rom.list.length}  ${name}`;   // 換掉上一個動作留下的口令（例如「回來」）
 }
 function endRomTest(completed) {
@@ -553,17 +560,17 @@ function romAlignCue(det, detView, m) {
   return null;
 }
 function stepRom(now, det, detView, vars) {
-  const slow = S.rom.prom ? 1.5 : 1, m = romMove(), lang = getLang(), { keys, duration } = timeline(m, slow);
+  const slow = romSlow(), m = romMove(), lang = getLang(), { keys, duration } = timeline(m, slow);
   let demoT = ((now - S.rom.phaseStart) / 1000) % duration;   // intro/align：示範動畫循環播放
   if (S.phase === 'intro') {
     // 等說明念完再對位；語音卡住時最多等 15 秒，流程不會停住
     const waited = now - S.rom.phaseStart;
-    if ((waited > 2500 && !isSpeaking()) || waited > 15000) { setPhase('align'); S.okSince = 0; S.lastCue = now; }
+    if ((waited > 2500 * paceK() && !isSpeaking()) || waited > 15000 * paceK()) { setPhase('align'); S.okSince = 0; S.lastCue = now; }
   } else if (S.phase === 'align') {
     const cue = romAlignCue(det, detView, m);
     $('#msg').textContent = cue ? v(cue) : '✓';
-    if (cue) { S.okSince = 0; if (now - S.lastCue > 3500 && !isSpeaking()) { say(cue); S.lastCue = now; } }
-    else { S.okSince ||= now; if (now - S.okSince > 800) { S.countdownEnd = now + 3000; S.lastCount = -1; crumb('countdown'); setPhase('countdown'); } }
+    if (cue) { S.okSince = 0; if (now - S.lastCue > 3500 * paceK() && !isSpeaking()) { say(cue); S.lastCue = now; } }
+    else { S.okSince ||= now; if (now - S.okSince > 800 * paceK()) { S.countdownEnd = now + 3000 * paceK(); S.lastCount = -1; crumb('countdown'); setPhase('countdown'); } }
   } else if (S.phase === 'countdown') {
     demoT = 0;
     const left = Math.ceil((S.countdownEnd - now) / 1000);
@@ -607,7 +614,7 @@ function stepRom(now, det, detView, vars) {
     }
     if (el >= duration) finishRomRecording();
   } else if (S.phase === 'done') demoT = 0;
-  const dv = demoValueAt(m, demoT, S.rom.prom ? 1.5 : 1);
+  const dv = demoValueAt(m, demoT, romSlow());
   romDemo.render(m.view, m.demo(dv), m, `${S.rom.idx + 1}/${S.rom.list.length}  ${romName(m)}`, m.arcs.map(() => dv), !!cfg.mirrorView);
 }
 function romPanel() {
@@ -661,13 +668,13 @@ async function finishRomRecording() {
   crumb('live');
   S.rom.idx++;
   if (S.mode !== 'rom') return;                       // 使用者已停止
-  if (S.rom.idx < S.rom.list.length) setTimeout(() => { if (S.mode === 'rom') enterRomIntro(true); }, 1500);
+  if (S.rom.idx < S.rom.list.length) setTimeout(() => { if (S.mode === 'rom') enterRomIntro(true); }, 1500 * paceK());
   else endRomTest(true);
 }
 /** 疼痛標記：記下當下方向（正向／反向）的角度，每個方向只記第一次（開始痛的角度） */
 function markPain() {
   if (S.mode !== 'rom' || S.phase !== 'record') return;
-  const m = romMove(), el = (performance.now() - S.recStart) / 1000, { keys } = timeline(m, S.rom.prom ? 1.5 : 1);
+  const m = romMove(), el = (performance.now() - S.recStart) / 1000, { keys } = timeline(m, romSlow());
   const dir = m.neg && el >= keys.find(k => k.cue === 'neg').t ? 'neg' : 'pos';
   if (S.rom.pain[dir]) return;
   S.rom.pain[dir] = Object.fromEntries(m.vars.map(vd => [vd.name, S.rom.live[vd.name]?.cur]));
@@ -1058,7 +1065,7 @@ function fillSettings() {
 $('#itemsForm').addEventListener('change', e => {
   const el = e.target; if (!el.name) return;
   cfg[el.name] = el.type === 'checkbox' ? el.checked : el.type === 'number' ? +el.value : el.value;
-  saveCfg(); if (el.name === 'voiceLevel') applyLang();
+  saveCfg(); if (el.name === 'voiceLevel' || el.name === 'pace') applyLang();
 });
 $('#settingsForm').addEventListener('submit', async e => {
   e.preventDefault();
@@ -1181,7 +1188,7 @@ $('#subjForm').addEventListener('submit', async e => {
   if (id !== old && all.some(p => p.id === id)) { toast(t('subjExists')); return; }
   const p = { ...(all.find(x => x.id === old) || { created: new Date().toISOString() }), id };
   for (const k of ['name', 'sex', 'birth', 'height_cm', 'mass_kg', 'dominant', 'notes']) p[k] = f.elements[k].value.trim();
-  p.height_cm = p.height_cm ? +p.height_cm : ''; p.mass_kg = p.mass_kg ? +p.mass_kg : '';
+  p.height_cm = p.height_cm ? +p.height_cm : ''; p.mass_kg = p.mass_kg ? +p.mass_kg : ''; p.updated = new Date().toISOString();
   await store.saveSubject(p);
   if (old && old !== id) await store.deleteSubject(old);   // 改編號：舊紀錄仍以舊編號保存
   f.hidden = true; await selectSubject(p); renderSubjects(); renderHistory(); toast(t('saved'));
@@ -1192,6 +1199,30 @@ $('#subjDeleteBtn').onclick = async () => {
   if (S.subjectRec?.id === id) await selectSubject(null);
   $('#subjForm').hidden = true; renderSubjects(); renderHistory();
 };
+// ---------------- 備份匯出／匯入 ----------------
+async function doExport(ids) {
+  $('#bkStatus').textContent = t('backupWorking');
+  try {
+    const { blob, counts } = await exportBackup({ subjectIds: ids, includeVideo: $('#bkVideo').checked, appVersion: APP_VERSION });
+    const d = new Date(), p = n => String(n).padStart(2, '0');
+    const stamp = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`;
+    download(blob, `posture-backup_${ids ? ids[0] : 'all'}_${stamp}.json`);
+    $('#bkStatus').textContent = `${t('backupDone')}：${counts.subjects} ${t('backupSubjects')}、${counts.sessions} ${t('backupSessions')}（${(blob.size / 1048576).toFixed(1)} MB）`;
+  } catch (e) { $('#bkStatus').textContent = t('backupFailed') + e.message; errRep.report(`backup export: ${e.message}`, e.stack); }
+}
+$('#bkAllBtn').onclick = () => doExport(null);
+$('#bkOneBtn').onclick = () => (S.subjectRec ? doExport([S.subjectRec.id]) : toast(t('needSubject')));
+$('#bkImportBtn').onclick = () => $('#bkFile').click();
+$('#bkFile').onchange = async e => {
+  const file = e.target.files?.[0]; e.target.value = ''; if (!file) return;
+  $('#bkStatus').textContent = t('backupWorking');
+  try {
+    const n = await importBackup(file);
+    $('#bkStatus').textContent = t('backupImported').replace('{a}', n.subjectsNew).replace('{b}', n.subjectsUpdated).replace('{c}', n.sessionsNew).replace('{d}', n.sessionsSkipped);
+    renderSubjects(); renderHistory();
+  } catch (err) { $('#bkStatus').textContent = t(err.message === 'not_backup' ? 'backupNotOurs' : err.message === 'not_json' ? 'backupBadFile' : 'backupFailed') + (['not_backup', 'not_json'].includes(err.message) ? '' : err.message); }
+};
+
 $('#subjList').addEventListener('click', async e => {
   const b = e.target.closest('button'), row = e.target.closest('.subj'); if (!b || !row) return;
   const p = (await store.listSubjects()).find(x => x.id === row.dataset.id); if (!p) return;
@@ -1199,7 +1230,7 @@ $('#subjList').addEventListener('click', async e => {
   else { await selectSubject(p); renderSubjects(); renderHistory(); toast(`👤 ${subjLabel(p)}`); }
 });
 function applyLang() {
-  setLang(cfg.lang); setVoiceLevel(cfg.voiceLevel);
+  setLang(cfg.lang); setVoiceLevel(cfg.voiceLevel); setSpeechRate((PACE[cfg.pace] || PACE.normal).rate);
   $('#voiceLevelBtn').textContent = t(cfg.voiceLevel === 'full' ? 'btnVlFull' : 'btnVlShort');
   $('#langBtn').textContent = cfg.lang === 'zh' ? 'EN' : '中文';
   $('#voiceBtn').textContent = t(S.voiceOn ? 'btnVoiceOn' : 'btnVoiceOff');
@@ -1232,7 +1263,7 @@ $('#guideBtn').onclick = () => {
   unlockAudio();
   S.session = newSession(); S.guided = true; S.viewIdx = 0;
   say('intro', { interrupt: true });
-  setTimeout(enterAlign, 4500);
+  setTimeout(enterAlign, 4500 * paceK());
 };
 $('#capBtn').onclick = () => {
   unlockAudio();

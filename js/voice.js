@@ -23,7 +23,9 @@ function pickVoice(lang) {
 
 // Chrome 的語音合成偶爾會「卡住」：speaking 一直是 true、後面的句子都不念（流程若等它念完就會停住）。
 // 對策：依字數估計每句應念完的時間；超過就視為沒在說話，並由看門狗清掉卡住的佇列。
-let speakingUntil = 0;
+let speakingUntil = 0, speechRate = 1;
+/** 慢速模式：所有語音的說話速度倍率 */
+export const setSpeechRate = r => { speechRate = r > 0 ? r : 1; };
 const estMs = text => 1500 + text.length * (getLang() === 'zh' ? 300 : 75);
 
 /** 說話；interrupt=true 會打斷目前語音。相同句子 minGapMs 內不重複 */
@@ -38,9 +40,9 @@ export function speak(text, { interrupt = false, minGapMs = 0, rate = 1 } = {}) 
   const lang = getLang();
   u.lang = lang === 'zh' ? 'zh-TW' : 'en-US';
   const v = pickVoice(lang); if (v) u.voice = v;
-  u.rate = rate;
+  u.rate = rate * speechRate;
   u.onend = u.onerror = () => { if (!speechSynthesis.pending) speakingUntil = 0; };
-  speakingUntil = Math.max(interrupt ? 0 : speakingUntil, now) + estMs(text) / rate;
+  speakingUntil = Math.max(interrupt ? 0 : speakingUntil, now) + estMs(text) / (rate * speechRate);
   speechSynthesis.speak(u);
 }
 export const isSpeaking = () => 'speechSynthesis' in window && speechSynthesis.speaking && performance.now() < speakingUntil;

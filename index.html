@@ -77,6 +77,19 @@
       <p class="hint full" data-i18n="subjPrivacy"></p>
     </form>
     <div id="subjList" class="subjlist"></div>
+    <!-- 備份：換裝置或多台裝置合併資料 -->
+    <details class="adv backup">
+      <summary data-i18n="backupTitle">匯出／匯入（備份、換裝置）</summary>
+      <p class="hint" data-i18n="backupHint"></p>
+      <label class="chk"><input type="checkbox" id="bkVideo"><span data-i18n="backupVideo">包含影片（檔案會很大）</span></label>
+      <div class="btns">
+        <button type="button" id="bkAllBtn" class="primary" data-i18n="backupAll">匯出全部受測者</button>
+        <button type="button" id="bkOneBtn" data-i18n="backupOne">只匯出目前受測者</button>
+        <button type="button" id="bkImportBtn" data-i18n="backupImport">匯入備份檔</button>
+        <input type="file" id="bkFile" accept=".json,application/json" hidden>
+      </div>
+      <p id="bkStatus" class="hint"></p>
+    </details>
     <h3 id="histTitle" data-i18n="history">歷史紀錄</h3>
     <div id="historyList"></div>
   </section>
@@ -91,6 +104,7 @@
           <label><span data-i18n="captureSec">記錄秒數</span><input name="captureSec" type="number" min="1" max="30"></label>
           <label class="chk"><input name="autoCapture" type="checkbox"><span data-i18n="autoCapture">對位完成自動倒數</span></label>
           <label class="chk"><input name="gesture" type="checkbox"><span data-i18n="gesture">舉手手勢觸發拍照</span></label>
+          <label><span data-i18n="pace">節奏</span><select name="pace"><option value="normal" data-i18n="paceNormal">標準</option><option value="slow" data-i18n="paceSlow">慢速（長者）</option><option value="slower" data-i18n="paceSlower">更慢</option></select></label>
           <label><span data-i18n="voiceLevel">語音提示</span><select name="voiceLevel"><option value="short" data-i18n="vlShort">簡易（短指令）</option><option value="full" data-i18n="vlFull">完整（詳細說明）</option></select></label>
         </form>
       </div>

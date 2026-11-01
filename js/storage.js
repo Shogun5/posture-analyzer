@@ -22,8 +22,9 @@ async function tx(store, mode, fn) {
   return new Promise((res, rej) => {
     const t = db.transaction(store, mode), s = t.objectStore(store);
     const req = fn(s);
-    t.oncomplete = () => res(req?.result);
-    t.onerror = () => rej(t.error);
+    // 每次交易完就關閉連線：大量匯入時不會累積開啟中的連線
+    t.oncomplete = () => { db.close(); res(req?.result); };
+    t.onerror = () => { db.close(); rej(t.error); };
   });
 }
 
@@ -38,6 +39,7 @@ export async function listSessions() {
 export const saveBaseline = b => tx('baselines', 'readwrite', st => st.put(b));
 export const getBaseline = subject => tx('baselines', 'readonly', st => st.get(subject));
 export const deleteBaseline = subject => tx('baselines', 'readwrite', st => st.delete(subject));
+export async function listBaselines() { return (await tx('baselines', 'readonly', st => st.getAll())) || []; }
 
 // 受測者名冊：{ id, name, sex, birth, height_cm, mass_kg, dominant, notes, created }
 export const saveSubject = p => tx('subjects', 'readwrite', st => st.put(p));

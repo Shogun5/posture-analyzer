@@ -173,3 +173,7 @@ button.prom { background: #7c3aed; }
 .romtbl td { white-space: normal; vertical-align: top; }
 .romtbl td small.low { color: var(--bad); font-weight: 700; }
 .romtbl td small.warn { color: var(--warn); font-weight: 700; }
+
+/* 備份 */
+details.backup { margin-top: 16px; }
+details.backup label.chk { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
