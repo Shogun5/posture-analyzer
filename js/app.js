@@ -1,9 +1,9 @@
 // app.js — 主控制：相機、即時分析迴圈、四方向引導拍攝狀態機、語音/手勢控制、校正、結果/歷史/設定 UI
 import { t, v, setLang, getLang, setVoiceLevel, getVoiceLevel } from './i18n.js';
 import { createPose, detect, MP_VERSION } from './pose.js';
-import { VIEWS, isSag, makeTransform, computeVars, computeCOM, detectView, enforceLR, upFromGravity, processRecording, EYE_HEIGHT_RATIO } from './biomech.js';
+import { SKELETON, VIEWS, isSag, makeTransform, computeVars, computeCOM, detectView, enforceLR, upFromGravity, processRecording, EYE_HEIGHT_RATIO } from './biomech.js';
 import { assessPosture, DEFAULT_THR } from './posture.js';
-import { drawOverlay, flushText } from './overlay.js';
+import { drawOverlay, flushText, queueText } from './overlay.js';
 import { speak, beep, unlockAudio, startListening, stopListening, speechSupported, isSpeaking, setSpeechRate } from './voice.js';
 import { CanvasRecorder } from './recorder.js';
 import * as store from './storage.js';
@@ -20,7 +20,7 @@ import { initFeedback, initErrorReporting } from './feedback.js';
 import { exportBackup, importBackup } from './backup.js';
 import { DEFAULT_FLOOR, drawFloorGuide, floorHandles, dragFloor, floorQuad } from './floorguide.js';
 
-export const APP_VERSION = '1.11.0'; // 與 sw.js 的 CACHE 版本一起更新
+export const APP_VERSION = '1.12.0'; // 與 sw.js 的 CACHE 版本一起更新
 
 const $ = s => document.querySelector(s);
 const fin = Number.isFinite;
@@ -29,7 +29,7 @@ const fin = Number.isFinite;
 const DEF = {
   lang: 'zh', subject: 'S01', height_cm: 170, mass_kg: 65, model: 'heavy', facing: 'environment', res: '720',
   captureSec: 5, countdownSec: 5, visThr: 0.5, mirrorFix: false, autoCapture: true, gesture: true, rawLm: false, thr: DEFAULT_THR,
-  delegate: 'GPU', videoFmt: 'auto', voiceLevel: 'short', deviceId: '', pace: 'normal', floorOn: false, floor: { ...DEFAULT_FLOOR }, showTrails: false, mirrorView: false,
+  delegate: 'GPU', videoFmt: 'auto', voiceLevel: 'short', deviceId: '', pace: 'normal', maxPeople: 3, floorOn: false, floor: { ...DEFAULT_FLOOR }, showTrails: false, mirrorView: false,
 };
 let cfg = loadCfg();
 function loadCfg() {
@@ -181,7 +181,7 @@ function stopCamera() {
   S.stream?.getTracks().forEach(tr => tr.stop());   // 釋放相機（瀏覽器的相機指示燈會熄滅）
   S.stream = null; video.srcObject = null;
   ctx.clearRect(0, 0, canvas.width, canvas.height); mctx.clearRect(0, 0, mview.width, mview.height);
-  S.hist = []; Object.values(S.trails).forEach(a => (a.length = 0)); S.liveScale = NaN;
+  S.hist = []; Object.values(S.trails).forEach(a => (a.length = 0)); S.liveScale = NaN; S.subjHip = null; S.subjLock = false; S.others = []; updateSubjBtn();
   $('#guideBtn').disabled = true; $('#capBtn').disabled = true; $('#romBtn').disabled = true;
   $('#msg').textContent = ''; $('#status').textContent = t('cameraOff');
   crumb('idle');
@@ -196,7 +196,7 @@ function setCamButton(on) {
   updateChecks(); renderPromBtn();
 }
 async function ensureModel() {
-  const n = S.rom?.prom ? 2 : 1, key = `${cfg.model}/${cfg.delegate}/${n}`;
+  const n = Math.max(S.rom?.prom ? 2 : 1, +cfg.maxPeople || 1), key = `${cfg.model}/${cfg.delegate}/${n}`;
   if (S.pose && S.poseVariant === key) return;
   crumb('model');
   $('#msg').textContent = t('loadingModel');
@@ -227,7 +227,8 @@ function loop(now) {
   let det = null;
   // 不需鏡像修正時直接把 video 交給模型（MediaPipe 的標準用法）；需要時才用翻轉後的畫布
   try { det = detect(S.pose, cfg.mirrorFix ? canvas : video, now, W, H); } catch (e) { console.warn(e); }
-  if (det?.all?.length > 1) det = pickSubject(det.all, W, H);
+  if (det?.all?.length > 1) det = pickSubject(det.all, W, H); else S.others = [];
+  S.lastDet = det;
   const view = S.mode === 'rom' ? romMove().view : curView();
   const detView = det ? detectView(det.lm) : null;   // 像素座標：正規化座標的 x/y 比例不同，橫向畫面會把正面誤判為側面
   let lm = det?.lm ?? null, swapped = false;
@@ -271,6 +272,7 @@ function loop(now) {
   if (S.phase === 'countdown') banner = String(Math.max(0, Math.ceil((S.countdownEnd - now) / 1000)));
   if (S.phase === 'record') banner = `REC ${((now - S.recStart) / 1000).toFixed(1)} s`;
   drawOverlay(ctx, { lm, view, up: S.up, scale: S.liveScale, vars, trails: cfg.showTrails ? S.trails : null, vel: cfg.showTrails ? vel : null, height_m: cfg.height_cm / 100, visThr: cfg.visThr, panel, banner });
+  if (S.others?.length) drawOthers(ctx, Math.max(W, H) / 900);
   if (cfg.floorOn || S.floorEdit) drawFloorGuide(ctx, cfg.floor, { editing: S.floorEdit, k: Math.max(W, H) / 900, labels: floorLabels() });
   // 鏡像顯示：先把（不含文字的）畫面左右翻轉複製過去，文字再各自正著畫
   if (cfg.mirrorView) {
@@ -304,20 +306,60 @@ function loop(now) {
 // 1) 腳踩在井字框（A4 紙）內的人；2) 與上一幀受測者的髖中點最近；3) 都無法判斷時取畫面中身形最高的人
 function pickSubject(all, W, H) {
   const hip = d => [(d.lm[23][0] + d.lm[24][0]) / 2, (d.lm[23][1] + d.lm[24][1]) / 2];
+  const foot = d => { const v = [27, 28, 29, 30].filter(i => d.lm[i][3] > 0.3); return v.length ? [v.reduce((s, i) => s + d.lm[i][0], 0) / v.length, v.reduce((s, i) => s + d.lm[i][1], 0) / v.length] : hip(d); };
+  const dist = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]);
   let best = null;
-  if (cfg.floorOn) {
-    const q = floorQuad(cfg.floor, W, H), inside = p => {   // 點在凸四邊形內
-      let s = 0; for (let i = 0; i < 4; i++) { const a = q[i], b = q[(i + 1) % 4], c = (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]); if (c !== 0) { if (s && Math.sign(c) !== s) return false; s = Math.sign(c); } }
-      return true;
-    };
-    const onSheet = all.filter(d => [27, 28, 29, 30].some(i => d.lm[i][3] > 0.3 && inside(d.lm[i])));
-    if (onSheet.length === 1) best = onSheet[0];
+  // 1) 手動鎖定（點畫面選人）：跟著同一個人走；離開畫面太遠就解除鎖定
+  if (S.subjLock && S.subjHip) {
+    best = all.reduce((x, d) => (dist(hip(d), S.subjHip) < dist(hip(x), S.subjHip) ? d : x));
+    if (dist(hip(best), S.subjHip) > 0.25 * W) { S.subjLock = false; best = null; updateSubjBtn(); }
   }
-  if (!best && S.subjHip) best = all.reduce((a, d) => (Math.hypot(...hip(d).map((v, i) => v - S.subjHip[i])) < Math.hypot(...hip(a).map((v, i) => v - S.subjHip[i])) ? d : a));
-  if (!best) { const h = d => Math.max(...d.lm.map(p => p[1])) - Math.min(...d.lm.map(p => p[1])); best = all.reduce((a, d) => (h(d) > h(a) ? d : a)); }
+  if (!best) {
+    // 2) 自動：受測者站在 A4 紙（井字框）正上方；沒開井字框就以畫面下方中央為準。
+    //    分數 = 腳到目標點的距離（橫向權重較高）；踩在紙上的人優先。
+    let target = [W / 2, H * 0.9], inside = () => false;
+    if (cfg.floorOn) {
+      const q = floorQuad(cfg.floor, W, H);
+      target = [(q[0][0] + q[1][0] + q[2][0] + q[3][0]) / 4, (q[0][1] + q[1][1] + q[2][1] + q[3][1]) / 4];
+      inside = p => { let s = 0; for (let i = 0; i < 4; i++) { const u = q[i], v = q[(i + 1) % 4], c = (v[0] - u[0]) * (p[1] - u[1]) - (v[1] - u[1]) * (p[0] - u[0]); if (c !== 0) { if (s && Math.sign(c) !== s) return false; s = Math.sign(c); } } return true; };
+    }
+    const score = d => { const f = foot(d); return Math.abs(f[0] - target[0]) + 0.3 * Math.abs(f[1] - target[1]) - (inside(f) ? W : 0); };
+    best = all.reduce((x, d) => (score(d) < score(x) ? d : x));
+    // 遲滯：上一幀的受測者仍然在、而且分數沒有差很多，就不換人（避免兩人並排時來回跳）
+    if (S.subjHip) {
+      const prev = all.reduce((x, d) => (dist(hip(d), S.subjHip) < dist(hip(x), S.subjHip) ? d : x));
+      if (prev !== best && dist(hip(prev), S.subjHip) < 0.08 * W && score(prev) < score(best) + 0.1 * W) best = prev;
+    }
+  }
   S.subjHip = hip(best);
+  S.others = all.filter(d => d !== best);
   return { ...best, all };
 }
+
+function drawOthers(c, k) {
+  for (const d of S.others) {
+    c.save(); c.strokeStyle = 'rgba(203,213,225,.45)'; c.lineWidth = 2 * k; c.setLineDash([6 * k, 5 * k]);
+    for (const [i, j] of SKELETON) if (d.lm[i][3] > 0.4 && d.lm[j][3] > 0.4) { c.beginPath(); c.moveTo(d.lm[i][0], d.lm[i][1]); c.lineTo(d.lm[j][0], d.lm[j][1]); c.stroke(); }
+    c.restore();
+    const h = d.lm[0];
+    if (h[3] > 0.4) queueText({ txt: t('tapToSwitch'), x: h[0], y: h[1] - 30 * k, font: `600 ${13 * k}px system-ui, "Noto Sans TC", sans-serif`, fill: '#e2e8f0', stroke: 'rgba(0,0,0,.7)', lw: 3 * k, align: 'center' });
+  }
+}
+// 點畫面上的人 → 改量測這個人並鎖定；按「受測者：自動」按鈕切換自動／下一位
+function chooseSubjectAt(p) {
+  const cand = [S.lastDet, ...(S.others || [])].filter(Boolean);
+  if (cand.length < 2) return false;
+  const near = d => { const xs = d.lm.filter(q => q[3] > 0.3).map(q => q[0]), ys = d.lm.filter(q => q[3] > 0.3).map(q => q[1]);
+    const inBox = p[0] >= Math.min(...xs) - 30 && p[0] <= Math.max(...xs) + 30 && p[1] >= Math.min(...ys) - 60 && p[1] <= Math.max(...ys) + 30;
+    return (inBox ? 0 : 1e6) + Math.abs(p[0] - (Math.min(...xs) + Math.max(...xs)) / 2); };
+  const pick = cand.reduce((x, d) => (near(d) < near(x) ? d : x));
+  if (pick === S.lastDet) return false;
+  S.subjHip = [(pick.lm[23][0] + pick.lm[24][0]) / 2, (pick.lm[23][1] + pick.lm[24][1]) / 2];
+  S.subjLock = true; S.hist = []; S.liveScale = NaN; Object.values(S.trails).forEach(x => (x.length = 0));
+  updateSubjBtn(); toast(t('subjSwitched'));
+  return true;
+}
+function updateSubjBtn() { const b = $('#whoBtn'); if (b) b.textContent = t(S.subjLock ? 'whoLocked' : 'whoAuto'); }
 
 // ---------------- 對位檢查 ----------------
 // 回傳語音提示的 key（null = 對位完成）。提示都以「受測者自己的方向」表達，一人操作時不必看螢幕也能調整
@@ -740,7 +782,7 @@ window.addEventListener('devicemotion', e => {
 });
 function plumbManual() { S.manualPts = []; toast(t('tapPlumb1')); }
 const onPlumbClick = e => {
-  if (!S.manualPts) return;
+  if (!S.manualPts) { if (!S.floorEdit && !S.floorDrag) chooseSubjectAt(toCanvasPx(e)); return; }
   S.manualPts.push(toCanvasPx(e));
   if (S.manualPts.length === 1) { toast(t('tapPlumb2')); return; }
   let [a, b] = S.manualPts; if (a[1] > b[1]) [a, b] = [b, a];  // a = 上方點
@@ -981,6 +1023,12 @@ $('#romTable').addEventListener('click', e => {
 });
 $('#promBtn').onclick = startPromTest;
 $('#painBtn').onclick = markPain;
+// 受測者按鈕：鎖定中 → 回到自動；自動 → 換下一位並鎖定
+$('#whoBtn').onclick = () => {
+  if (S.subjLock) { S.subjLock = false; updateSubjBtn(); toast(t('whoAuto')); return; }
+  const o = S.others?.[0]; if (!o) { toast(t('onlyOnePerson')); return; }
+  chooseSubjectAt([(o.lm[23][0] + o.lm[24][0]) / 2, (o.lm[23][1] + o.lm[24][1]) / 2]);
+};
 function drawRomChart() {
   const id = $('#romSel').value, res = S.viewSession?.rom?.[id] || S.viewSession?.prom?.[id]; if (!res) return;
   const en = getLang() === 'en', sideName = vn => (/^R_/.test(vn) ? t('right') : /^L_/.test(vn) ? t('left') : '');
@@ -1080,7 +1128,7 @@ $('#settingsForm').addEventListener('submit', async e => {
   saveCfg(); applyLang();
   if (S.session && !Object.keys(S.session.views).length) S.session = null;
   if (S.stream && (old.facing !== cfg.facing || old.res !== cfg.res)) startCamera();
-  else if (S.stream && (old.model !== cfg.model || old.delegate !== cfg.delegate)) ensureModel();
+  else if (S.stream && (old.model !== cfg.model || old.delegate !== cfg.delegate || old.maxPeople !== cfg.maxPeople)) ensureModel();
   toast(t('saved'));
 });
 // 還原自動安全模式所改的設定，並清除當機紀錄
@@ -1234,7 +1282,7 @@ function applyLang() {
   $('#voiceLevelBtn').textContent = t(cfg.voiceLevel === 'full' ? 'btnVlFull' : 'btnVlShort');
   $('#langBtn').textContent = cfg.lang === 'zh' ? 'EN' : '中文';
   $('#voiceBtn').textContent = t(S.voiceOn ? 'btnVoiceOn' : 'btnVoiceOff');
-  renderChips(); listCameras(); setFloorUI();
+  renderChips(); listCameras(); setFloorUI(); updateSubjBtn();
   $('#curSubj').textContent = `👤 ${subjLabel(S.subjectRec)}`;
   if (S.voiceOn) { stopListening(); startVoice(); }
 }
