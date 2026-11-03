@@ -21,7 +21,7 @@ import { exportBackup, importBackup } from './backup.js';
 import { postureBento, aromBento, countUp, asymName } from './bento.js';
 import { DEFAULT_FLOOR, drawFloorGuide, floorHandles, dragFloor, floorQuad } from './floorguide.js';
 
-export const APP_VERSION = '2.0.0'; // 與 sw.js 的 CACHE 版本一起更新
+export const APP_VERSION = '2.1.0'; // 與 sw.js 的 CACHE 版本一起更新
 
 const $ = s => document.querySelector(s);
 const fin = Number.isFinite;
@@ -1391,6 +1391,8 @@ const gateUI = {
   show(state, detail, email) {
     this.state = state;
     $('#gate').classList.remove('hidden');
+    // 需要登入時才載入 3D 開場（已登入的人不會下載 three.js）
+    if (state !== 'checking' && !this.g3d) this.g3d = import('./gate3d.js').then(m => m.startGate3D($('#gate'))).catch(() => () => {});
     const el = $('#gateMsg');
     let msg = t(`gate_${state}`);
     if (state === 'denied') msg = (t(`gate_${detail}`) || detail) + (email ? email : '') + (['not_listed', 'disabled', 'expired'].includes(detail) ? t('gate_contact') : '');
@@ -1402,7 +1404,7 @@ const gateUI = {
     $('#gateRedirect').onclick = e => { e.preventDefault(); useRedirectMode(!redirect); };
   },
   diag(txt) { $('#gateDiag').textContent = `v${APP_VERSION} · ${txt}`; },
-  hide() { this.state = 'ok'; $('#gate').classList.add('hidden'); },
+  hide() { this.state = 'ok'; $('#gate').classList.add('hidden'); this.g3d?.then(stop => stop()); this.g3d = null; },
 };
 $('#signOutBtn').onclick = () => signOut();
 
