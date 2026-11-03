@@ -69,9 +69,13 @@ export async function makeFigure({ rim = true } = {}) {
     rot('Neck', X, (p.neckFlex || 0) * 0.6); rot('Head', X, (p.neckFlex || 0) * 0.4);
     // 雙肩外展／內收（正面）
     // 內收（負值）時手臂先往前抬，雙手在身體前方交叉，才不會穿進身體裡看不到
-    const addFwd = v => (v < 0 ? 30 + -v * 0.6 : 0);
-    if ('shAbdR' in p) { rot('RightArm', X, -addFwd(p.shAbdR || 0)); rot('RightArm', Z, -(p.shAbdR || 0)); }
-    if ('shAbdL' in p) { rot('LeftArm', X, -addFwd(p.shAbdL || 0)); rot('LeftArm', Z, p.shAbdL || 0); }
+    const addFwd = v => (v < 0 ? Math.min(1, -v / 10) * (55 + -v * 0.8) : 0);   // 0°→-10° 之間漸進，避免動畫跳動
+    // 外展：繞前後軸往外抬；內收：手臂先往前抬，再繞垂直軸水平往中線收，雙手在胸前交叉
+    for (const [n, v, sg] of [['RightArm', p.shAbdR, -1], ['LeftArm', p.shAbdL, 1]]) {
+      if (v === undefined) continue;
+      if (v >= 0) rot(n, Z, sg * v);
+      else { rot(n, X, -addFwd(v)); rot(n, Y, -sg * -v * 1.3); }
+    }
     // 肩屈曲／伸展、肘屈曲（側面）
     if ('shFlex' in p) rot(`${S}Arm`, X, -(p.shFlex || 0));
     if ('elbowFlex' in p) rot(`${S}ForeArm`, X, -(p.elbowFlex || 0));

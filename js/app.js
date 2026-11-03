@@ -21,7 +21,7 @@ import { exportBackup, importBackup } from './backup.js';
 import { postureBento, aromBento, countUp, asymName, upgradeBodyMaps } from './bento.js';
 import { DEFAULT_FLOOR, drawFloorGuide, floorHandles, dragFloor, floorQuad } from './floorguide.js';
 
-export const APP_VERSION = '2.3.3'; // 與 sw.js 的 CACHE 版本一起更新
+export const APP_VERSION = '2.3.4'; // 與 sw.js 的 CACHE 版本一起更新
 
 const $ = s => document.querySelector(s);
 const fin = Number.isFinite;
