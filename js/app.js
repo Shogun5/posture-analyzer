@@ -21,7 +21,7 @@ import { exportBackup, importBackup } from './backup.js';
 import { postureBento, aromBento, countUp, asymName, upgradeBodyMaps } from './bento.js';
 import { DEFAULT_FLOOR, drawFloorGuide, floorHandles, dragFloor, floorQuad } from './floorguide.js';
 
-export const APP_VERSION = '2.3.1'; // 與 sw.js 的 CACHE 版本一起更新
+export const APP_VERSION = '2.3.2'; // 與 sw.js 的 CACHE 版本一起更新
 
 const $ = s => document.querySelector(s);
 const fin = Number.isFinite;
@@ -30,7 +30,7 @@ const fin = Number.isFinite;
 const DEF = {
   lang: 'zh', subject: 'S01', height_cm: 170, mass_kg: 65, model: 'heavy', facing: 'environment', res: '720',
   captureSec: 5, countdownSec: 5, visThr: 0.5, mirrorFix: false, autoCapture: true, gesture: true, rawLm: false, thr: DEFAULT_THR,
-  delegate: 'GPU', videoFmt: 'auto', voiceLevel: 'short', deviceId: '', pace: 'normal', maxPeople: 3, floorOn: false, floor: { ...DEFAULT_FLOOR }, showTrails: false, mirrorView: false,
+  delegate: 'GPU', videoFmt: 'auto', voiceLevel: 'short', deviceId: '', pace: 'normal', maxPeople: 3, demoStyle: 'auto', floorOn: false, floor: { ...DEFAULT_FLOOR }, showTrails: false, mirrorView: false,
 };
 let cfg = loadCfg();
 function loadCfg() {
@@ -530,8 +530,12 @@ async function finishRecording() {
 //   → countdown 3 s → record（口令時間軸 + 示範同步；開始 1.5 s 為 0° 基準）→ 分析 → 下一個動作
 const romDemo = createDemo($('#romDemo'));
 // 3D 示範人形（與登入畫面同一個人物）；載入成功就取代向量小人，失敗則保留向量版
-let demo3d = null, demo3dP = null;
-function ensureDemo3D() { demo3dP ??= import('./demo3d.js').then(m => m.createDemo3D($('.stage'))).then(d => (demo3d = d)).catch(e => { console.warn('demo3d', e); return null; }); return demo3dP; }
+let demo3d = null, demo3dP = null, demoAutoOff = false;
+// 示範動畫：auto＝一般用 3D，裝置較弱或測試中畫面變慢就改用向量版；3d＝一律 3D；2d＝一律向量（較省電）
+const weakDevice = () => (navigator.hardwareConcurrency || 8) <= 4 || (navigator.deviceMemory || 8) <= 3;
+const use3D = () => cfg.demoStyle === '3d' || (cfg.demoStyle !== '2d' && !demoAutoOff && !weakDevice());
+function ensureDemo3D() {
+  if (!use3D()) return Promise.resolve(null); demo3dP ??= import('./demo3d.js').then(m => m.createDemo3D($('.stage'))).then(d => (demo3d = d)).catch(e => { console.warn('demo3d', e); return null; }); return demo3dP; }
 const romMove = () => S.rom.list[S.rom.idx];
 const romName = m => (getLang() === 'en' ? m.en : m.zh);
 const avg = a => a.reduce((s, x) => s + x, 0) / a.length;
@@ -663,8 +667,13 @@ function stepRom(now, det, detView, vars) {
   } else if (S.phase === 'done') demoT = 0;
   const dv = demoValueAt(m, demoT, romSlow());
   const dTitle = `${S.rom.idx + 1}/${S.rom.list.length}  ${romName(m)}`, dVals = m.arcs.map(() => dv);
-  if (demo3d) { $('#romDemo').toggleAttribute('hidden', true); demo3d.render(m.view, m.demo(dv), m, dTitle, dVals, !!cfg.mirrorView); }
-  else romDemo.render(m.view, m.demo(dv), m, dTitle, dVals, !!cfg.mirrorView);
+  // 自動模式：AROM 記錄中若畫面低於 15 fps 超過 3 秒，改用向量示範（省下 3D 繪圖）
+  if (demo3d && cfg.demoStyle === 'auto' && S.phase === 'record') {
+    if (S.fpsEMA < 15) { S.slowSince ||= now; if (now - S.slowSince > 3000) { demoAutoOff = true; demo3d.hide(); $('#romDemo').toggleAttribute('hidden', false); toast(t('demoAutoOff')); } }
+    else S.slowSince = 0;
+  }
+  if (demo3d && use3D()) { $('#romDemo').toggleAttribute('hidden', true); demo3d.render(m.view, m.demo(dv), m, dTitle, dVals, !!cfg.mirrorView); }
+  else { demo3d?.hide(); $('#romDemo').toggleAttribute('hidden', false); romDemo.render(m.view, m.demo(dv), m, dTitle, dVals, !!cfg.mirrorView); }
 }
 function romPanel() {
   if (!S.rom) return [];
@@ -1123,7 +1132,10 @@ $('#itemsForm').addEventListener('change', e => {
   const el = e.target; if (!el.name) return;
   cfg[el.name] = el.type === 'checkbox' ? el.checked : el.type === 'number' ? +el.value : el.value;
   saveCfg(); if (el.name === 'voiceLevel' || el.name === 'pace') applyLang();
+  if (el.name === 'demoStyle') demoAutoOff = false;
 });
+// 示範動畫（⚙ 設定）：改了立即生效，不必等按「儲存設定」
+document.querySelector('select[name=demoStyle]').addEventListener('change', e => { cfg.demoStyle = e.target.value; demoAutoOff = false; saveCfg(); });
 $('#settingsForm').addEventListener('submit', async e => {
   e.preventDefault();
   const f = e.target, old = { ...cfg };
