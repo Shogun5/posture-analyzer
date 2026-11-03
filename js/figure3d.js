@@ -69,7 +69,7 @@ export async function makeFigure({ rim = true } = {}) {
     rot('Neck', X, (p.neckFlex || 0) * 0.6); rot('Head', X, (p.neckFlex || 0) * 0.4);
     // 雙肩外展／內收（正面）
     // 內收（負值）時手臂先往前抬，雙手在身體前方交叉，才不會穿進身體裡看不到
-    const addFwd = v => (v < 0 ? Math.min(1, -v / 10) * (55 + -v * 0.8) : 0);   // 0°→-10° 之間漸進，避免動畫跳動
+    const addFwd = v => (v < 0 ? Math.min(1, -v / 10) * (32 + -v * 0.3) : 0);   // 手在肚子前交叉；0°→-10° 之間漸進，避免動畫跳動
     // 外展：繞前後軸往外抬；內收：手臂先往前抬，再繞垂直軸水平往中線收，雙手在胸前交叉
     // 真人交叉時一手在前、一手在後：右手抬高較多（在前上方），左手較少，手臂不會互相穿過
     for (const [n, v, sg, lift] of [['RightArm', p.shAbdR, -1, 1.18], ['LeftArm', p.shAbdL, 1, 0.82]]) {
