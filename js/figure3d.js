@@ -68,8 +68,10 @@ export async function makeFigure({ rim = true } = {}) {
     rot('Neck', Z, (p.neckLat || 0) * 0.7); rot('Head', Z, (p.neckLat || 0) * 0.3);
     rot('Neck', X, (p.neckFlex || 0) * 0.6); rot('Head', X, (p.neckFlex || 0) * 0.4);
     // 雙肩外展／內收（正面）
-    if ('shAbdR' in p) rot('RightArm', Z, -(p.shAbdR || 0));
-    if ('shAbdL' in p) rot('LeftArm', Z, p.shAbdL || 0);
+    // 內收（負值）時手臂先往前抬，雙手在身體前方交叉，才不會穿進身體裡看不到
+    const addFwd = v => (v < 0 ? 30 + -v * 0.6 : 0);
+    if ('shAbdR' in p) { rot('RightArm', X, -addFwd(p.shAbdR || 0)); rot('RightArm', Z, -(p.shAbdR || 0)); }
+    if ('shAbdL' in p) { rot('LeftArm', X, -addFwd(p.shAbdL || 0)); rot('LeftArm', Z, p.shAbdL || 0); }
     // 肩屈曲／伸展、肘屈曲（側面）
     if ('shFlex' in p) rot(`${S}Arm`, X, -(p.shFlex || 0));
     if ('elbowFlex' in p) rot(`${S}ForeArm`, X, -(p.elbowFlex || 0));
