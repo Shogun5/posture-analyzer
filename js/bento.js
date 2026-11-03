@@ -113,7 +113,7 @@ export function aromBento(s, nameOf) {
       for (const dir of m.neg ? ['pos', 'neg'] : ['pos']) {
         const d = dir === 'pos' ? m.pos : m.neg, val = mt => (mt ? (dir === 'pos' ? mt.pos : -mt.neg) : NaN), pc = mt => (mt ? (dir === 'pos' ? mt.pctPos : mt.pctNeg) : NaN);
         const painA = A?.pain?.[dir]?.[vn], painP = Pp?.pain?.[dir]?.[vn], pain = painA ?? painP;
-        rows.push({ label: `${shortName(nameOf(m), side)} · ${en ? d.en : d.zh}`, norm: d.norm, a: val(am), p: val(pm), painA: fin(painA) ? Math.abs(painA) : NaN, painP: fin(painP) ? Math.abs(painP) : NaN });
+        rows.push({ label: `${shortName(nameOf(m), side)} · ${en ? d.en : d.zh}`, norm: d.norm, a: val(am), p: val(pm), pct: pc(am), painA: fin(painA) ? Math.abs(painA) : NaN, painP: fin(painP) ? Math.abs(painP) : NaN });
         if (fin(pc(am))) pcts.push(pc(am));
         if ((fin(pc(am)) && pc(am) < 90) || fin(pain) || am?.comp?.warn)
           moveJoints(id, side).forEach(joint => pins.push({ joint, level: (fin(pc(am)) && pc(am) < 75) || fin(pain) ? 'bad' : 'warn', text: `${nameOf(m)} ${sideTxt} ${en ? d.en : d.zh} ${fin(val(am)) ? Math.round(val(am)) + '°' : ''}${fin(pain) ? ' ⚡' : ''}`, ref: refForMove(id) }));
@@ -132,12 +132,15 @@ export function aromBento(s, nameOf) {
 
   // 啞鈴圖：常模刻度（灰）、AROM（白點）、PROM（青綠點），中間線長 = 被動多出的角度
   const max = Math.max(180, ...rows.flatMap(r => [r.norm, r.a, r.p]).filter(fin)), LW = 190, W = 640, rowH = 26, X = v => LW + (W - LW - 60) * Math.max(0, v) / max;
+  // AROM 長條：從 0 畫到 AROM 值，顏色依 %常模（≥90 青綠、75–89 琥珀、<75 紅）；PROM 多出的部分接在後面
+  const barCol = p => (!fin(p) ? C.muted : p < 75 ? C.bad : p < 90 ? C.warn : C.accent);
   const db = rows.map((r, i) => {
     const y = 18 + i * rowH;
     return `<g><text x="0" y="${y + 4}" fill="${C.ink}" font-size="12">${esc(r.label)}</text>
       <line x1="${X(0)}" x2="${X(max)}" y1="${y}" y2="${y}" stroke="${C.line}"/>
       <line x1="${X(r.norm)}" x2="${X(r.norm)}" y1="${y - 8}" y2="${y + 8}" stroke="${C.muted}" stroke-width="2"/>
-      ${fin(r.a) && fin(r.p) ? `<line x1="${X(r.a)}" x2="${X(r.p)}" y1="${y}" y2="${y}" stroke="${C.accent}" stroke-opacity=".55" stroke-width="5" stroke-linecap="round"/>` : ''}
+      ${fin(r.a) ? `<line x1="${X(0)}" x2="${X(r.a)}" y1="${y}" y2="${y}" stroke="${barCol(r.pct)}" stroke-width="9" stroke-linecap="round" opacity=".9"/>` : ''}
+      ${fin(r.a) && fin(r.p) ? `<line x1="${X(r.a)}" x2="${X(r.p)}" y1="${y}" y2="${y}" stroke="${C.accent}" stroke-opacity=".6" stroke-width="5" stroke-linecap="round"/>` : ''}
       ${[r.painA, r.painP].filter(fin).map(v => `<path d="M${X(v)} ${y - 11} l4 7 h-8 z" fill="${C.bad}"/>`).join('')}
       ${fin(r.a) ? `<circle cx="${X(r.a)}" cy="${y}" r="6" fill="${C.ink}"/>` : ''}
       ${fin(r.p) ? `<circle cx="${X(r.p)}" cy="${y}" r="6" fill="${C.accent}"/>` : ''}
@@ -156,7 +159,7 @@ export function aromBento(s, nameOf) {
       ${fin(maxGain) ? stat('', t('sumPromGain'), Math.round(maxGain), '°', 'PROM − AROM') : ''}
     </div>
     <div class="b-wide"><div class="rings">${ringsHtml}</div></div>
-    <div class="b-wide dumbbell"><div class="legend"><span><i style="background:${C.ink}"></i>AROM</span><span><i style="background:${C.accent}"></i>PROM</span><span><i style="background:${C.muted};border-radius:1px;width:3px"></i>${t('norm')}</span><span><i style="background:${C.bad};border-radius:0;clip-path:polygon(50% 0,100% 100%,0 100%)"></i>${t('painAt')}</span></div>
+    <div class="b-wide dumbbell"><div class="legend"><span><i style="background:linear-gradient(90deg,${C.bad},${C.warn},${C.accent});border-radius:3px;width:22px"></i>AROM（${t('barLegend')}）</span><span><i style="background:${C.accent}"></i>PROM</span><span><i style="background:${C.muted};border-radius:1px;width:3px"></i>${t('norm')}</span><span><i style="background:${C.bad};border-radius:0;clip-path:polygon(50% 0,100% 100%,0 100%)"></i>${t('painAt')}</span></div>
       <svg viewBox="0 0 ${W} ${rows.length * rowH + 28}">${db}${ticks}</svg></div>
   </div>`;
 }
