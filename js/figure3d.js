@@ -23,7 +23,7 @@ export async function makeFigure({ rim = true, focus = rim } = {}) {
   const { THREE, gltf } = await loadLib();
   const { clone } = await import('https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/utils/SkeletonUtils.js/+esm');
   const body = clone(gltf.scene);
-  // 受測肢段標示：每根骨骼一個權重（1 = 受測），依頂點的蒙皮權重混合 → 受測肢段變成發光的強調色，其餘身體變暗
+  // 受測肢段標示：每根骨骼一個權重（1 = 受測），依頂點的蒙皮權重混合 → 受測肢段變成發光的金色（與綠色關節區隔），其餘身體變暗
   let skel = null;
   body.traverse(o => { if (o.isSkinnedMesh && !skel) skel = o.skeleton; });
   const NB = skel?.bones.length || 1;
@@ -45,11 +45,11 @@ export async function makeFigure({ rim = true, focus = rim } = {}) {
         float hi = smoothstep(0.35, 0.65, vHi) * uFocus;
         float dim = uFocus * (1.0 - hi);
         diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.5, dim);
-        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.18, 0.90, 0.66), hi * ${glow ? '0.75' : '0.3'});
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0, 0.74, 0.22), hi * ${glow ? '0.75' : '0.3'});
         totalEmissiveRadiance *= 1.0 - 0.7 * dim;
-        totalEmissiveRadiance += vec3(0.18, 0.90, 0.66) * hi * ${glow ? '0.55' : '0.6'};
+        totalEmissiveRadiance += vec3(1.0, 0.70, 0.18) * hi * ${glow ? '0.55' : '0.6'};
         ${rimOn ? `float fr = pow(1.0 - abs(dot(normalize(vNormal), normalize(vViewPosition))), 3.0);
-        totalEmissiveRadiance += vec3(0.18, 0.90, 0.66) * fr * (0.5 * (1.0 - dim) + hi * 1.2);` : ''}`);
+        totalEmissiveRadiance += mix(vec3(0.18, 0.90, 0.66) * 0.5 * (1.0 - dim), vec3(1.0, 0.72, 0.2) * 1.2, hi) * fr;` : ''}`);
     };
   };
   const shell = new THREE.MeshPhysicalMaterial({ color: SHELL, roughness: 0.3, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.15 });
