@@ -67,7 +67,7 @@ function shortName(full, side) {
   return side && !/^[右左RL]/.test(base) ? `${base}（${side === 'R' ? t('right') : t('left')}）` : base;
 }
 /** 左右差異列的中文名稱 */
-export const asymName = label => (getLang() === 'en' ? label : ({ 'shoulder abd': '肩外展', 'trunk lat flex': '軀幹側彎', 'neck lat flex': '頸側屈', 'hip abd': '髖外展', 'shoulder flex': '肩屈曲',
+export const asymName = label => (getLang() === 'en' ? label : ({ 'shoulder abd': '肩外展', 'shoulder add': '肩內收', 'trunk lat flex': '軀幹側彎', 'neck lat flex': '頸側屈', 'hip abd': '髖外展', 'shoulder flex': '肩屈曲',
   'shoulder ext': '肩伸展', 'elbow flex': '肘屈曲', 'hip flex': '髖屈曲', 'knee flex': '膝屈曲', 'hip ER': '髖外轉', 'hip IR': '髖內轉', 'shoulder ER': '肩外轉', 'shoulder IR': '肩內轉' }[label] || label));
 const stat = (cls, lab, num, unit, sub) => `<div class="stat ${cls}"><div class="lab">${lab}</div><div class="num"><span class="num-anim" data-to="${fin(num) ? num : ''}">${fin(num) ? 0 : esc(num)}</span>${unit ? `<small>${unit}</small>` : ''}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
 

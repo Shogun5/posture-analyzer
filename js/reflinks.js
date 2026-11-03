@@ -14,7 +14,7 @@ export function refForFlag(id) { return POSTURE.find(([re]) => re.test(id))?.[1]
 
 // AROM：動作 id → 講義頁面
 const ROM = [
-  [/^(sh_abd|[RL]_sh_flex|[RL]_sh_rot)$/, '疼痛弧與肩關節導航'],
+  [/^(sh_abd|sh_abd_[RL]|[RL]_sh_flex|[RL]_sh_rot)$/, '疼痛弧與肩關節導航'],
   [/^[RL]_elbow$/, '肘關節活動度與功能性弧度'],
   [/^(neck_lat|neck_flex)$/, '頸椎活動度與阻力測試'],
   [/^(trunk_lat|trunk_flex)$/, '胸椎活動度與胸廓擴張'],
@@ -23,7 +23,7 @@ const ROM = [
 ];
 export function refForMove(id) { return ROM.find(([re]) => re.test(id))?.[1] ?? null; }
 // 左右差異列（asymmetry 的 label）→ 講義頁面
-const ASYM = { 'shoulder abd': 'sh_abd', 'shoulder flex': 'R_sh_flex', 'shoulder ext': 'R_sh_flex', 'shoulder ER': 'R_sh_rot', 'shoulder IR': 'R_sh_rot', 'elbow flex': 'R_elbow',
+const ASYM = { 'shoulder abd': 'sh_abd_R', 'shoulder add': 'sh_abd_R', 'shoulder flex': 'R_sh_flex', 'shoulder ext': 'R_sh_flex', 'shoulder ER': 'R_sh_rot', 'shoulder IR': 'R_sh_rot', 'elbow flex': 'R_elbow',
   'trunk lat flex': 'trunk_lat', 'neck lat flex': 'neck_lat', 'hip abd': 'hip_abd_R', 'hip flex': 'R_hip_flex', 'hip ER': 'hip_rot_R', 'hip IR': 'hip_rot_R', 'knee flex': 'R_knee' };
 export const refForAsym = label => (ASYM[label] ? refForMove(ASYM[label]) : null);
 // 多個關節同時受限時，可參考關節囊受限模式

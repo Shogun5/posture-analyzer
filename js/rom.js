@@ -15,7 +15,19 @@ export const BASE_SEC = 1.5;   // 開始的靜態基準時間
 // demo(v) 回傳示範人形的參數；arcs 指定示範圖上要畫角度弧的關節
 export const MOVES = [
   // ---------- 正面 ----------
-  { id: 'sh_abd', view: 'front', zh: '雙肩 外展／內收', en: 'Shoulder abduction / adduction (both)',
+  // 肩外展／內收：左右分開測（一次一手，口令較單純、兩手不互相遮擋）
+  ...['R', 'L'].map(S => {
+    const zh = S === 'R' ? '右' : '左', en = S === 'R' ? 'Right' : 'Left', other = S === 'R' ? '左' : '右';
+    return { id: `sh_abd_${S}`, view: 'front', zh: `${zh}肩 外展／內收`, en: `${en} shoulder abduction / adduction`,
+      vars: [{ name: `${S}_shoulder_abd_deg`, side: S }], lm: S === 'R' ? [12, 14, 16, 24, 11] : [11, 13, 15, 23, 12],
+      introZh: `${zh}手放在身體旁邊，手掌朝前。聽口令，${zh}手伸直從側邊往上舉到最高，放下後再往身體前方、朝${other}側內收。`,
+      introEn: `${en} arm at your side, palm forward. On cue, raise the straight arm out to the side and overhead, lower it, then bring it across the front of your body.`,
+      pos: { to: 170, zh: '外展', en: 'abduction', norm: 180, src: 'AAOS', cueZh: `${zh}手從側邊往上舉到最高`, cueEn: 'Raise your arm out and up as high as you can', sZh: `${zh}手往上舉`, sEn: 'Arm up' },
+      neg: { to: -35, zh: '內收', en: 'adduction', norm: 50, src: 'Magee', cueZh: `${zh}手往身體前方內收`, cueEn: 'Bring your arm across the front of your body', sZh: `${zh}手往前內收`, sEn: 'Arm across' },
+      demo: v => ({ [`shAbd${S}`]: v }), arcs: [[`S${S}`, 'trunkDown', `arm${S}`]] };
+  }),
+  // 舊版「雙肩一起測」：只為了顯示以前的紀錄，不會出現在測試清單
+  { id: 'sh_abd', legacy: true, view: 'front', zh: '雙肩 外展／內收', en: 'Shoulder abduction / adduction (both)',
     vars: [{ name: 'R_shoulder_abd_deg', side: 'R' }, { name: 'L_shoulder_abd_deg', side: 'L' }],
     lm: [11, 12, 13, 14, 15, 16, 23, 24],
     introZh: '雙手放在身體兩側，手掌朝前。聽口令，雙手伸直從兩側往上舉到最高，再放下，在身體前方交叉。',
@@ -246,7 +258,8 @@ export function asymmetry(romResults) {
   const rows = [];
   const pair = (label, a, b) => { if (Number.isFinite(a) && Number.isFinite(b)) rows.push({ label, R: a, L: b, asymPct: 100 * Math.abs(a - b) / Math.max(Math.abs(a), Math.abs(b), 1e-6) }); };
   const g = (id, v, k = 'pos') => romResults?.[id]?.metrics?.[v]?.[k];
-  pair('shoulder abd', g('sh_abd', 'R_shoulder_abd_deg'), g('sh_abd', 'L_shoulder_abd_deg'));
+  pair('shoulder abd', g('sh_abd_R', 'R_shoulder_abd_deg') ?? g('sh_abd', 'R_shoulder_abd_deg'), g('sh_abd_L', 'L_shoulder_abd_deg') ?? g('sh_abd', 'L_shoulder_abd_deg'));
+  pair('shoulder add', -(g('sh_abd_R', 'R_shoulder_abd_deg', 'neg') ?? g('sh_abd', 'R_shoulder_abd_deg', 'neg')), -(g('sh_abd_L', 'L_shoulder_abd_deg', 'neg') ?? g('sh_abd', 'L_shoulder_abd_deg', 'neg')));
   pair('trunk lat flex', g('trunk_lat', 'trunk_seg_deg'), -g('trunk_lat', 'trunk_seg_deg', 'neg'));
   pair('neck lat flex', g('neck_lat', 'eye_tilt_deg'), -g('neck_lat', 'eye_tilt_deg', 'neg'));
   pair('hip abd', g('hip_abd_R', 'R_hip_abd_deg'), g('hip_abd_L', 'L_hip_abd_deg'));

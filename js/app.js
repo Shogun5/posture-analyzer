@@ -21,7 +21,7 @@ import { exportBackup, importBackup } from './backup.js';
 import { postureBento, aromBento, countUp, asymName, upgradeBodyMaps } from './bento.js';
 import { DEFAULT_FLOOR, drawFloorGuide, floorHandles, dragFloor, floorQuad } from './floorguide.js';
 
-export const APP_VERSION = '2.3.7'; // 與 sw.js 的 CACHE 版本一起更新
+export const APP_VERSION = '2.4.0'; // 與 sw.js 的 CACHE 版本一起更新
 
 const $ = s => document.querySelector(s);
 const fin = Number.isFinite;
@@ -544,7 +544,7 @@ function startRomTest() {
   unlockAudio();
   if (!S.pose) { toast(t('cameraOff')); return; }
   syncRomSel();
-  const list = MOVES.filter(m => !cfg.romSel || cfg.romSel.includes(m.id));
+  const list = MOVES.filter(m => !m.legacy && (!cfg.romSel || cfg.romSel.includes(m.id)));
   if (!list.length) { toast(t('romNone')); showTab('items'); return; }
   S.mode = 'rom'; S.guided = false;
   S.session = newSession(); S.session.rom = {};
@@ -963,6 +963,7 @@ function renderRomChecklist() {
   const sel = cfg.romSel ?? MOVES.map(m => m.id);
   let html = '', lastView = '';
   for (const m of MOVES) {
+    if (m.legacy) continue;
     if (m.view !== lastView) { lastView = m.view; html += `<h4>${t('view_' + m.view)}</h4>`; }
     const norms = `${getLang() === 'en' ? m.pos.en : m.pos.zh} ${m.pos.norm}°${m.neg ? ` / ${getLang() === 'en' ? m.neg.en : m.neg.zh} ${m.neg.norm}°` : ''}`;
     html += `<label><input type="checkbox" data-id="${m.id}" ${sel.includes(m.id) ? 'checked' : ''}><span>${romName(m)} <small class="hint">(${norms})</small></span></label>`;
@@ -972,7 +973,7 @@ function renderRomChecklist() {
 $('#romChecklist').addEventListener('change', () => {
   cfg.romSel = [...document.querySelectorAll('#romChecklist input:checked')].map(i => i.dataset.id); saveCfg();
 });
-$('#romAllBtn').onclick = () => { cfg.romSel = MOVES.map(m => m.id); saveCfg(); renderRomChecklist(); };
+$('#romAllBtn').onclick = () => { cfg.romSel = MOVES.filter(m => !m.legacy).map(m => m.id); saveCfg(); renderRomChecklist(); };
 $('#romNoneBtn').onclick = () => { cfg.romSel = []; saveCfg(); renderRomChecklist(); };
 
 function renderRom() {
