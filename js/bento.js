@@ -47,14 +47,14 @@ function bodySVG(pins) {
   const sil = SIL.map(([a, b]) => `<line x1="${P(a)[0]}" y1="${P(a)[1]}" x2="${P(b)[0]}" y2="${P(b)[1]}"/>`).join('');
   const pinsSvg = Object.entries(by).map(([k, g]) => {
     const [x, y] = J[k], col = g.level === 'bad' ? C.bad : C.warn;
-    return `<g class="pin${g.ref ? ' reflink' : ''}"${g.ref ? ` data-ref="${esc(g.ref)}"` : ''}><title>${esc(g.texts.join('\n'))}</title>
+    return `<g class="pin${g.ref ? ' reflink' : ''}" data-joint="${k}"${g.ref ? ` data-ref="${esc(g.ref)}"` : ''}><title>${esc(g.texts.join('\n'))}</title>
       <circle class="halo" cx="${x}" cy="${y}" r="11" fill="${col}"/><circle cx="${x}" cy="${y}" r="5.5" fill="${col}" stroke="#0E1014" stroke-width="2"/></g>`;
   }).join('');
   return `<svg viewBox="0 0 200 300" role="img" aria-label="body map">
     <line x1="100" y1="6" x2="100" y2="296" stroke="${C.accent}" stroke-opacity=".35" stroke-dasharray="3 4"/>
     ${Array.from({ length: 15 }, (_, i) => `<line x1="96" x2="104" y1="${10 + i * 20}" y2="${10 + i * 20}" stroke="${C.accent}" stroke-opacity=".25"/>`).join('')}
-    <g stroke="rgba(255,255,255,.16)" stroke-width="13" stroke-linecap="round" fill="none">${sil}</g>
-    <circle cx="${J.head[0]}" cy="${J.head[1] - 4}" r="17" fill="rgba(255,255,255,.12)"/>
+    <g class="sil"><g stroke="rgba(255,255,255,.16)" stroke-width="13" stroke-linecap="round" fill="none">${sil}</g>
+    <circle cx="${J.head[0]}" cy="${J.head[1] - 4}" r="17" fill="rgba(255,255,255,.12)"/></g>
     ${pinsSvg}
     <text x="14" y="294" fill="${C.muted}" font-size="10" font-family="Barlow Condensed, sans-serif" letter-spacing="2">R</text>
     <text x="180" y="294" fill="${C.muted}" font-size="10" font-family="Barlow Condensed, sans-serif" letter-spacing="2">L</text>
@@ -162,6 +162,22 @@ export function aromBento(s, nameOf) {
     <div class="b-wide dumbbell"><div class="legend"><span><i style="background:linear-gradient(90deg,${C.bad},${C.warn},${C.accent});border-radius:3px;width:22px"></i>AROM（${t('barLegend')}）</span><span><i style="background:${C.accent}"></i>PROM</span><span><i style="background:${C.muted};border-radius:1px;width:3px"></i>${t('norm')}</span><span><i style="background:${C.bad};border-radius:0;clip-path:polygon(50% 0,100% 100%,0 100%)"></i>${t('painAt')}</span></div>
       <svg viewBox="0 0 ${W} ${rows.length * rowH + 28}">${db}${ticks}</svg></div>
   </div>`;
+}
+
+/** 人體圖換成 3D 人物（與登入畫面同一個）：背景換圖、紅／琥珀點移到人物的真實關節位置；載入失敗就維持線條人形 */
+export async function upgradeBodyMaps(root) {
+  let map;
+  try { map = await (await import('./figure3d.js')).renderBodyMap(); } catch { return; }
+  for (const svg of root.querySelectorAll('.bodymap svg')) {
+    if (svg.querySelector('image.fig')) continue;
+    const img = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+    img.setAttribute('class', 'fig'); img.setAttribute('href', map.url); img.setAttribute('x', 0); img.setAttribute('y', 0); img.setAttribute('width', 200); img.setAttribute('height', 300);
+    const sil = svg.querySelector('.sil'); sil?.replaceWith(img);
+    for (const pin of svg.querySelectorAll('.pin[data-joint]')) {
+      const p = map.pts[pin.dataset.joint]; if (!p) continue;
+      for (const c of pin.querySelectorAll('circle')) { c.setAttribute('cx', p[0].toFixed(1)); c.setAttribute('cy', p[1].toFixed(1)); }
+    }
+  }
 }
 
 /** 數字由 0 跑到結果值（約 0.8 秒，ease-out） */

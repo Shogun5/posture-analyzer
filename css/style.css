@@ -115,6 +115,13 @@ textarea { font: 12px ui-monospace, monospace; width: 100%; }
 .stage .chips { position: absolute; top: 12px; left: 12px; z-index: 3; margin: 0; }
 .romdemo { position: absolute; top: 12px; right: 12px; width: 32%; max-width: 280px; min-width: 130px; height: auto; pointer-events: none; z-index: 2; }
 .romdemo[hidden] { display: none; }
+/* 3D 示範人形（取代向量小人）：疊在畫面右上角，標題與角度另外疊在上面（鏡像時不翻轉文字） */
+.demo3d { position: absolute; top: 12px; right: 12px; width: 30%; max-width: 260px; min-width: 130px; aspect-ratio: 4 / 5; z-index: 2; pointer-events: none;
+  border-radius: 16px; overflow: hidden; background: rgba(14,16,20,.78); border: 1px solid var(--line2); backdrop-filter: blur(8px); }
+.demo3d canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; max-height: none; }
+.demo3d .d3title { position: absolute; left: 10px; right: 10px; top: 8px; font-size: 12px; color: var(--ink); text-align: center; text-shadow: 0 1px 3px #000; }
+.demo3d .d3val { position: absolute; right: 12px; bottom: 8px; font: 700 34px/1 var(--f-num); color: var(--accent); text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+.demo3d .d3side { position: absolute; left: 10px; bottom: 10px; font: 600 11px var(--f-num); letter-spacing: .12em; color: var(--muted); }
 .msg { position: absolute; left: 12px; right: 12px; bottom: 12px; padding: 10px 16px; border-radius: 14px; background: rgba(14,16,20,.72); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
   border: 1px solid var(--line2); color: var(--ink); font-size: 16px; text-align: center; min-height: 1em; z-index: 3; }
 .msg:empty { display: none; }

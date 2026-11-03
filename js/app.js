@@ -18,10 +18,10 @@ import { renderPhoto, composeBoard, meanSDTable, varLabel } from './posturecard.
 import { refForFlag, refForMove, refForAsym, CAPSULAR } from './reflinks.js';
 import { initFeedback, initErrorReporting } from './feedback.js';
 import { exportBackup, importBackup } from './backup.js';
-import { postureBento, aromBento, countUp, asymName } from './bento.js';
+import { postureBento, aromBento, countUp, asymName, upgradeBodyMaps } from './bento.js';
 import { DEFAULT_FLOOR, drawFloorGuide, floorHandles, dragFloor, floorQuad } from './floorguide.js';
 
-export const APP_VERSION = '2.2.1'; // 與 sw.js 的 CACHE 版本一起更新
+export const APP_VERSION = '2.3.1'; // 與 sw.js 的 CACHE 版本一起更新
 
 const $ = s => document.querySelector(s);
 const fin = Number.isFinite;
@@ -529,6 +529,9 @@ async function finishRecording() {
 // 流程（每個動作）：intro（語音說明 + 示範動畫循環）→ align（朝向、相關關節入鏡、靜止）
 //   → countdown 3 s → record（口令時間軸 + 示範同步；開始 1.5 s 為 0° 基準）→ 分析 → 下一個動作
 const romDemo = createDemo($('#romDemo'));
+// 3D 示範人形（與登入畫面同一個人物）；載入成功就取代向量小人，失敗則保留向量版
+let demo3d = null, demo3dP = null;
+function ensureDemo3D() { demo3dP ??= import('./demo3d.js').then(m => m.createDemo3D($('.stage'))).then(d => (demo3d = d)).catch(e => { console.warn('demo3d', e); return null; }); return demo3dP; }
 const romMove = () => S.rom.list[S.rom.idx];
 const romName = m => (getLang() === 'en' ? m.en : m.zh);
 const avg = a => a.reduce((s, x) => s + x, 0) / a.length;
@@ -543,6 +546,7 @@ function startRomTest() {
   S.session = newSession(); S.session.rom = {};
   S.rom = { list, idx: 0, phaseStart: 0, cueIdx: 0, live: {}, snaps: {}, lastView: null };
   $('#romDemo').toggleAttribute('hidden', false); // SVG 元素沒有 .hidden 屬性
+  ensureDemo3D();
   $('.stage').classList.add('solo');              // AROM：受測者站在遠處，提示字放大
   $('#painBtn').hidden = false;
   speak(v('romIntro'), { interrupt: true });
@@ -559,7 +563,7 @@ async function startPromTest() {
   S.rom = { list, idx: 0, phaseStart: 0, cueIdx: 0, live: {}, snaps: {}, lastView: null, prom: true };
   S.subjHip = null;
   await ensureModel();                               // 換成可偵測 2 人的模型
-  $('#romDemo').toggleAttribute('hidden', false);
+  $('#romDemo').toggleAttribute('hidden', false); ensureDemo3D();
   $('.stage').classList.add('solo');
   $('#painBtn').hidden = false;
   speak(v('promIntro'), { interrupt: true });
@@ -583,7 +587,7 @@ function enterRomIntro(queue = false) {
 }
 function endRomTest(completed) {
   const prom = !!S.rom?.prom;
-  S.mode = 'posture'; setPhase('idle'); $('#romDemo').toggleAttribute('hidden', true); $('#msg').textContent = '';
+  S.mode = 'posture'; setPhase('idle'); $('#romDemo').toggleAttribute('hidden', true); demo3d?.hide(); $('#msg').textContent = '';
   $('#painBtn').hidden = true;
   if (prom) { S.rom.prom = false; S.promQueue = []; renderPromBtn(); ensureModel(); }   // 回到單人模型
   $('.stage').classList.toggle('solo', S.voiceOn);
@@ -658,7 +662,9 @@ function stepRom(now, det, detView, vars) {
     if (el >= duration) finishRomRecording();
   } else if (S.phase === 'done') demoT = 0;
   const dv = demoValueAt(m, demoT, romSlow());
-  romDemo.render(m.view, m.demo(dv), m, `${S.rom.idx + 1}/${S.rom.list.length}  ${romName(m)}`, m.arcs.map(() => dv), !!cfg.mirrorView);
+  const dTitle = `${S.rom.idx + 1}/${S.rom.list.length}  ${romName(m)}`, dVals = m.arcs.map(() => dv);
+  if (demo3d) { $('#romDemo').toggleAttribute('hidden', true); demo3d.render(m.view, m.demo(dv), m, dTitle, dVals, !!cfg.mirrorView); }
+  else romDemo.render(m.view, m.demo(dv), m, dTitle, dVals, !!cfg.mirrorView);
 }
 function romPanel() {
   if (!S.rom) return [];
@@ -820,7 +826,7 @@ function renderResults(preferView) {
   const sel = $('#resView');
   const avail = VIEWS.filter(vw => s?.views?.[vw]?.result);
   if (!avail.length) { $('#resInfo').textContent = t('noSession'); $('#board').innerHTML = ''; $('#postureBento').innerHTML = ''; return; }
-  $('#postureBento').innerHTML = postureBento(s); countUp($('#postureBento'));
+  $('#postureBento').innerHTML = postureBento(s); countUp($('#postureBento')); upgradeBodyMaps($('#postureBento'));
   // 進階圖表的選單（變數以中文名稱顯示）
   const cur = preferView && avail.includes(preferView) ? preferView : avail.includes(sel.value) ? sel.value : avail[0];
   sel.innerHTML = avail.map(vw => `<option value="${vw}" ${vw === cur ? 'selected' : ''}>${t('view_' + vw)}</option>`).join('');
@@ -963,7 +969,7 @@ $('#romNoneBtn').onclick = () => { cfg.romSel = []; saveCfg(); renderRomChecklis
 function renderRom() {
   const s = S.viewSession, R = s?.rom || {}, P = s?.prom || {}, C = S.compare?.rom;
   const ids = MOVES.map(m => m.id).filter(id => R[id] || P[id]);
-  $('#aromBento').innerHTML = ids.length ? aromBento(s, romName) : ''; countUp($('#aromBento'));
+  $('#aromBento').innerHTML = ids.length ? aromBento(s, romName) : ''; countUp($('#aromBento')); upgradeBodyMaps($('#aromBento'));
   if (!ids.length) { $('#romInfo').textContent = t('romNone'); $('#romTable').innerHTML = ''; $('#romAsym').innerHTML = ''; $('#romSnaps').innerHTML = ''; $('#romSel').innerHTML = ''; return; }
   $('#romInfo').textContent = `${s.subject} · ${new Date(s.date).toLocaleString()}${C ? ` · ${t('preRom')}: ${S.compare.date.slice(0, 10)}` : ''}`;
   const f = x => (fin(x) ? x.toFixed(0) : '–'), en = getLang() === 'en';

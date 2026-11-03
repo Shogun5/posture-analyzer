@@ -47,7 +47,8 @@ export function createDemo(svg) {
       // 坐姿髖旋轉：大腿朝向鏡頭（畫短），小腿由膝往下；外轉 = 腳往身體中線（正面圖：右腳往畫面右）
       const seated = 'hipRotR' in p || 'hipRotL' in p;
       const sR = [Math.sin((p.hipRotR || 0) * R), Math.cos((p.hipRotR || 0) * R)], sL = [-Math.sin((p.hipRotL || 0) * R), Math.cos((p.hipRotL || 0) * R)];
-      if (seated) { KR = add(HR, [-0.3, 0.95], 14); KL = add(HL, [0.3, 0.95], 14); AR = add(KR, sR, 44); AL = add(KL, sL, 44); }
+      if ('hipRotR' in p) { KR = add(HR, [-0.3, 0.95], 14); AR = add(KR, sR, 44); }   // 單腳站立：只有測試腳抬起（大腿朝鏡頭縮短）
+      if ('hipRotL' in p) { KL = add(HL, [0.3, 0.95], 14); AL = add(KL, sL, 44); }
       pts = { P, N, H, SR, SL, HR, HL };
       pts.KR = KR; pts.KL = KL;
       dirs = { up: [0, -1], down: [0, 1], trunkUp: up, trunkDown: [-up[0], -up[1]], head: hdir, armR: aR, armL: aL, legR: lR, legL: lL, shankR: sR, shankL: sL };
