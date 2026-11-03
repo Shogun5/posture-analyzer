@@ -62,11 +62,11 @@ export function drawFloorGuide(ctx, f, { editing = false, k = 1, labels = {} } =
   };
   const seg = (u0, v0, u1, v1, color, w, dash) => line(T(u0, v0), T(u1, v1), color, w, dash);
   // 延伸中線（虛線）：前後軸、左右軸
-  seg(0.5, -2, 0.5, 1.6, 'rgba(34,211,238,.5)', 1.2, [8, 6]);
-  seg(-1.2, 0.5, 2.2, 0.5, 'rgba(34,211,238,.5)', 1.2, [8, 6]);
+  seg(0.5, -2, 0.5, 1.6, 'rgba(46,230,168,.5)', 1.2, [8, 6]);
+  seg(-1.2, 0.5, 2.2, 0.5, 'rgba(46,230,168,.5)', 1.2, [8, 6]);
   // 井字線 + 外框（細線，不遮紙）
-  for (const s of [1 / 3, 2 / 3]) { seg(s, 0, s, 1, 'rgba(34,211,238,.9)', 1.5); seg(0, s, 1, s, 'rgba(34,211,238,.9)', 1.5); }
-  ctx.save(); ctx.strokeStyle = '#22d3ee'; ctx.lineWidth = 2 * k; ctx.beginPath();
+  for (const s of [1 / 3, 2 / 3]) { seg(s, 0, s, 1, 'rgba(46,230,168,.9)', 1.5); seg(0, s, 1, s, 'rgba(46,230,168,.9)', 1.5); }
+  ctx.save(); ctx.strokeStyle = '#2EE6A8'; ctx.lineWidth = 2 * k; ctx.beginPath();
   q.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]))); ctx.closePath(); ctx.stroke(); ctx.restore();
   if (!editing) return;
   for (const hd of floorHandles(f, W, H, k)) {

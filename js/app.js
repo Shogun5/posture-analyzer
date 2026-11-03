@@ -18,9 +18,10 @@ import { renderPhoto, composeBoard, meanSDTable, varLabel } from './posturecard.
 import { refForFlag, refForMove, refForAsym, CAPSULAR } from './reflinks.js';
 import { initFeedback, initErrorReporting } from './feedback.js';
 import { exportBackup, importBackup } from './backup.js';
+import { postureBento, aromBento, countUp, asymName } from './bento.js';
 import { DEFAULT_FLOOR, drawFloorGuide, floorHandles, dragFloor, floorQuad } from './floorguide.js';
 
-export const APP_VERSION = '1.12.0'; // 與 sw.js 的 CACHE 版本一起更新
+export const APP_VERSION = '2.0.0'; // 與 sw.js 的 CACHE 版本一起更新
 
 const $ = s => document.querySelector(s);
 const fin = Number.isFinite;
@@ -818,7 +819,8 @@ function renderResults(preferView) {
   const s = S.viewSession;
   const sel = $('#resView');
   const avail = VIEWS.filter(vw => s?.views?.[vw]?.result);
-  if (!avail.length) { $('#resInfo').textContent = t('noSession'); $('#board').innerHTML = ''; return; }
+  if (!avail.length) { $('#resInfo').textContent = t('noSession'); $('#board').innerHTML = ''; $('#postureBento').innerHTML = ''; return; }
+  $('#postureBento').innerHTML = postureBento(s); countUp($('#postureBento'));
   // 進階圖表的選單（變數以中文名稱顯示）
   const cur = preferView && avail.includes(preferView) ? preferView : avail.includes(sel.value) ? sel.value : avail[0];
   sel.innerHTML = avail.map(vw => `<option value="${vw}" ${vw === cur ? 'selected' : ''}>${t('view_' + vw)}</option>`).join('');
@@ -961,6 +963,7 @@ $('#romNoneBtn').onclick = () => { cfg.romSel = []; saveCfg(); renderRomChecklis
 function renderRom() {
   const s = S.viewSession, R = s?.rom || {}, P = s?.prom || {}, C = S.compare?.rom;
   const ids = MOVES.map(m => m.id).filter(id => R[id] || P[id]);
+  $('#aromBento').innerHTML = ids.length ? aromBento(s, romName) : ''; countUp($('#aromBento'));
   if (!ids.length) { $('#romInfo').textContent = t('romNone'); $('#romTable').innerHTML = ''; $('#romAsym').innerHTML = ''; $('#romSnaps').innerHTML = ''; $('#romSel').innerHTML = ''; return; }
   $('#romInfo').textContent = `${s.subject} · ${new Date(s.date).toLocaleString()}${C ? ` · ${t('preRom')}: ${S.compare.date.slice(0, 10)}` : ''}`;
   const f = x => (fin(x) ? x.toFixed(0) : '–'), en = getLang() === 'en';
@@ -997,7 +1000,7 @@ function renderRom() {
   }
   $('#romTable').innerHTML = `<table class="tbl romtbl">${head}${rows}</table>${nLimited >= 2 ? `<p class="hint">${t('capsularHint')}${refBtn(CAPSULAR)}</p>` : ''}<p class="hint">${t('promNote')}</p><p class="hint">${t('romRefNote')}</p>`;
   const asym = asymmetry(R);
-  $('#romAsym').innerHTML = asym.length ? `<table class="tbl"><tr><th>${t('romMove')}</th><th>${t('right')}</th><th>${t('left')}</th><th>${t('asymPct')}</th></tr>${asym.map(x => `<tr><td>${x.label}${x.asymPct > 15 ? refBtn(refForAsym(x.label)) : ''}</td><td>${f(x.R)}</td><td>${f(x.L)}</td><td class="${x.asymPct > 15 ? 'low' : x.asymPct > 10 ? 'warn' : ''}">${x.asymPct.toFixed(0)}%</td></tr>`).join('')}</table>` : '';
+  $('#romAsym').innerHTML = asym.length ? `<table class="tbl"><tr><th>${t('romMove')}</th><th>${t('right')}</th><th>${t('left')}</th><th>${t('asymPct')}</th></tr>${asym.map(x => `<tr><td>${asymName(x.label)}${x.asymPct > 15 ? refBtn(refForAsym(x.label)) : ''}</td><td>${f(x.R)}</td><td>${f(x.L)}</td><td class="${x.asymPct > 15 ? 'low' : x.asymPct > 10 ? 'warn' : ''}">${x.asymPct.toFixed(0)}%</td></tr>`).join('')}</table>` : '';
   const prev = $('#romSel').value;
   $('#romSel').innerHTML = ids.map(id => `<option value="${id}" ${id === prev ? 'selected' : ''}>${romName(MOVES.find(x => x.id === id))}</option>`).join('');
   $('#romSnaps').innerHTML = ids.flatMap(id => {

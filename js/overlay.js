@@ -1,7 +1,7 @@
 // overlay.js — 畫面疊加：骨架、角度弧與數值、鉛垂線/地板線、身高尺、軌跡尾巴、速度向量、即時數值面板
 import { SKELETON, isSag } from './biomech.js';
 
-const COLORS = { R: '#f97316', L: '#38bdf8', C: '#e5e7eb', plumb: '#facc15', floor: '#a3e635', COM: '#f43f5e', hipMid: '#a78bfa', R_heel: '#22d3ee', head: '#fde047' };
+const COLORS = { R: '#FF8A3D', L: '#4FB3FF', C: '#EDEFF2', plumb: '#2EE6A8', floor: 'rgba(46,230,168,.55)', COM: '#f43f5e', hipMid: '#a78bfa', R_heel: '#22d3ee', head: '#fde047' };
 const sideOf = i => (i === 0 ? 'C' : [1, 2, 3, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31].includes(i) ? 'L' : 'R');
 
 // 角度弧定義：[近端, 關節, 遠端, 變數名]
@@ -125,7 +125,14 @@ export function drawOverlay(ctx, o) {
     });
   }
   if (o.banner) {
-    const fs = 42 * k;
-    queueText({ txt: o.banner, x: W / 2, y: H * 0.14, font: `800 ${fs}px system-ui`, fill: '#fff', stroke: 'rgba(0,0,0,.6)', lw: 6 * k, align: 'center' });
+    if (/^\d+$/.test(o.banner)) {   // 倒數：畫面中央超大數字（遠處也看得到）
+      const fs = H * 0.34;
+      queueText({ txt: o.banner, x: W / 2, y: H * 0.5 + fs * 0.36, font: `700 ${fs}px "Barlow Condensed", "Bahnschrift", system-ui`, fill: '#2EE6A8', stroke: 'rgba(5,6,8,.55)', lw: 10 * k, align: 'center' });
+    } else {                         // 記錄中：上方紅點膠囊
+      const fs = 26 * k, w = 210 * k, h = 44 * k, x0 = W / 2 - w / 2, y0 = 18 * k;
+      ctx.save(); ctx.fillStyle = 'rgba(14,16,20,.75)'; ctx.beginPath(); ctx.roundRect?.(x0, y0, w, h, h / 2); ctx.fill();
+      ctx.fillStyle = '#FF5A5F'; ctx.beginPath(); ctx.arc(x0 + 24 * k, y0 + h / 2, 8 * k, 0, 7); ctx.fill(); ctx.restore();
+      queueText({ txt: o.banner, x: W / 2 + 12 * k, y: y0 + h / 2 + fs * 0.36, font: `700 ${fs}px "Barlow Condensed", system-ui`, fill: '#EDEFF2', align: 'center' });
+    }
   }
 }

@@ -178,7 +178,7 @@ export async function renderPhoto(photo, view, result, flags, { title = '', visT
   const cv = document.createElement('canvas');
   cv.width = IW + PANEL * 2; cv.height = IH + HEAD;
   const c = cv.getContext('2d');
-  c.fillStyle = '#0f172a'; c.fillRect(0, 0, cv.width, cv.height);
+  c.fillStyle = '#0E1014'; c.fillRect(0, 0, cv.width, cv.height);
   c.drawImage(im, x0, y0, cropW, cropH, PANEL, HEAD, IW, IH);
   const X = p => PANEL + (p[0] - x0) * s, Y = p => HEAD + (p[1] - y0) * s;
   const font = (w, px) => `${w} ${px}px system-ui, -apple-system, "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif`;
@@ -236,10 +236,10 @@ export async function renderPhoto(photo, view, result, flags, { title = '', visT
   }
   // 標題列
   const nBad = (flags || []).filter(f => f.sev !== 'info').length;
-  c.fillStyle = '#0f766e'; c.fillRect(0, 0, cv.width, HEAD);
+  c.fillStyle = '#16191F'; c.fillRect(0, 0, cv.width, HEAD); c.fillStyle = '#2EE6A8'; c.fillRect(0, HEAD - 3, cv.width, 3);
   c.fillStyle = '#fff'; c.font = font(800, 28); c.fillText(title, 16, 38);
   c.font = font(700, 22); c.textAlign = 'right';
-  c.fillStyle = nBad ? '#fecaca' : '#ccfbf1';
+  c.fillStyle = nBad ? '#F5A524' : '#2EE6A8';
   c.fillText(nBad ? (en ? `${nBad} finding(s)` : `問題 ${nBad} 項`) : (en ? 'No findings' : '未見明顯問題'), cv.width - 16, 37);
   c.textAlign = 'left';
   return cv;

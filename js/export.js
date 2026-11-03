@@ -3,6 +3,7 @@ import { LM_NAMES, VIEWS } from './biomech.js';
 import { t, getLang } from './i18n.js';
 import { MOVES, asymmetry, romSnapCaption } from './rom.js';
 import { meanSD, meanSDTable } from './posturecard.js';
+import { asymName } from './bento.js';
 
 export function download(data, filename, type = 'application/octet-stream') {
   const blob = data instanceof Blob ? data : new Blob([data], { type });
@@ -99,7 +100,7 @@ function romSection(s, compare) {
       }
     }
   }
-  const asym = asymmetry(R).map(x => `<tr><td>${x.label}</td><td>${f(x.R)}</td><td>${f(x.L)}</td><td>${x.asymPct.toFixed(0)}%</td></tr>`).join('');
+  const asym = asymmetry(R).map(x => `<tr><td>${asymName(x.label)}</td><td>${f(x.R)}</td><td>${f(x.L)}</td><td>${x.asymPct.toFixed(0)}%</td></tr>`).join('');
   // 每個動作：AROM／PROM 兩個方向在最大角度時的照片並排，方便檢查量測
   const fig = (lab, m, res, k) => `<figure style="display:inline-block;margin:4px;width:220px;vertical-align:top"><img src="${res.snapshots[k]}" style="width:100%"><figcaption style="font-size:11px">${lab} · ${escH(romSnapCaption(m, res, k, en))}</figcaption></figure>`;
   const snaps = MOVES.map(m => {
@@ -146,14 +147,48 @@ export function reportHTML(s, photos = {}, compare = null, baseline = null, kind
   const imgs = '';
   return `<!doctype html><html lang="${en ? 'en' : 'zh-Hant'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${title} ${escH(fileBase(s, kind))}</title>
-<style>body{font:14px/1.5 system-ui,"Noto Sans TC",sans-serif;margin:24px;color:#111;background:#fff}h1{font-size:22px}h2{border-bottom:2px solid #0f766e;padding-bottom:4px}
-table{border-collapse:collapse;width:100%;margin:8px 0;font-size:12px}td,th{border:1px solid #ccc;padding:3px 6px;text-align:left;vertical-align:top}th{background:#f1f5f9}
-tr.marked td:first-child{font-weight:700;color:#b91c1c}tr.mild td:first-child{color:#b45309}tr.info td{color:#475569;font-style:italic}
-.row{display:flex;gap:16px;flex-wrap:wrap}.row img{max-width:320px;max-height:480px;border:1px solid #ccc}img.photo{display:block;max-width:100%;max-height:150mm;margin:8px auto;border:1px solid #ccc}tr.bad td{color:#b91c1c;font-weight:700}.row>div{flex:1;min-width:280px}.qc{color:#475569;font-size:12px}
-img.chart{max-width:100%;margin:8px 0;border:1px solid #eee}section{page-break-inside:avoid;margin-bottom:24px}@media print{button{display:none}body{margin:8mm}}</style></head><body>
-<button onclick="print()">🖨 ${en ? 'Print / Save as PDF' : '列印 / 另存 PDF'}</button>
-<h1>${title}</h1>
-<p>${t('subject')}: <b>${escH(s.subject)}</b> · ${t('date')}: ${new Date(s.date).toLocaleString()} · ${t('height')}: ${f2(s.height_m * 100)} · ${t('mass')}: ${f2(s.mass_kg)} · ${t('model')}: MediaPipe Pose ${escH(s.model)} · ${t('plumbStatus')}: ${escH(s.plumbMode)}</p>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Noto+Sans+TC:wght@400;700;900&display=swap">
+<!-- S4 中文瑞士風：紙白、墨黑、單一紅色重點；嚴謹網格、左對齊、大標題配小字資料 -->
+<style>
+:root{--paper:#F5F3EE;--ink:#111111;--mute:#6B6B6B;--rule:#D9D5CC;--red:#E3241B}
+*{box-sizing:border-box}
+body{font:13.5px/1.6 "Noto Sans TC",system-ui,sans-serif;margin:0;color:var(--ink);background:var(--paper)}
+.page{max-width:210mm;margin:0 auto;padding:16mm 14mm}
+.cover{display:grid;grid-template-columns:42mm 1fr;gap:10mm;padding-bottom:4mm;margin-bottom:6mm}
+.cover .meta{border-right:1px solid var(--rule);padding-right:6mm;font-size:12px;color:var(--mute)}
+.cover .meta b{display:block;color:var(--ink);font-size:15px;margin:0 0 3mm}
+.cover .meta dl{margin:0}.cover .meta dt{font:600 10px "Barlow Condensed",sans-serif;letter-spacing:.2em;text-transform:uppercase;margin-top:3mm}.cover .meta dd{margin:0;color:var(--ink)}
+.kicker{font:700 11px "Barlow Condensed",sans-serif;letter-spacing:.32em;text-transform:uppercase;color:var(--red)}
+h1{font:900 34px/1.15 "Noto Sans TC",sans-serif;margin:3mm 0 4mm;letter-spacing:.02em}
+h1::after{content:"";display:block;width:18mm;height:3px;background:var(--red);margin-top:4mm}
+.lede{color:var(--mute);margin:0}
+h2{font:900 20px "Noto Sans TC",sans-serif;margin:0 0 4mm;padding-top:3mm;border-top:1.5px solid var(--ink);display:flex;align-items:baseline;gap:4mm}
+h2::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--red);transform:translateY(-3px)}
+h3{font-size:13px;letter-spacing:.06em;margin:6mm 0 2mm;color:var(--mute)}
+table{border-collapse:collapse;width:100%;margin:2mm 0 4mm;font-size:11.5px}
+th{font:600 10px "Barlow Condensed",sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--mute);text-align:left;border-bottom:1.5px solid var(--ink);padding:2mm 2mm}
+td{border-bottom:1px solid var(--rule);padding:1.6mm 2mm;text-align:left;vertical-align:top;font-variant-numeric:tabular-nums}
+tr.marked td:first-child{font-weight:700;color:var(--red)}tr.mild td:first-child{color:#9A5B00}tr.info td{color:var(--mute);font-style:italic}tr.bad td{color:var(--red);font-weight:700}
+img.photo{display:block;max-width:100%;max-height:150mm;margin:3mm 0;border:1px solid var(--rule)}
+.row{display:flex;gap:16px;flex-wrap:wrap}.row img{max-width:320px;max-height:480px;border:1px solid var(--rule)}.row>div{flex:1;min-width:280px}
+.qc{color:var(--mute);font-size:11px}
+img.chart{max-width:100%;margin:8px 0;border:1px solid var(--rule)}
+section{page-break-inside:avoid;margin-bottom:9mm}
+figure img{border:1px solid var(--rule)}
+.printbtn{position:fixed;right:16px;top:16px;font:700 14px "Noto Sans TC",sans-serif;background:var(--ink);color:var(--paper);border:0;border-radius:999px;padding:10px 18px;cursor:pointer}
+@media print{.printbtn{display:none}body{background:#fff}.page{padding:0}@page{size:A4;margin:12mm}}
+</style></head><body>
+<button class="printbtn" onclick="print()">🖨 ${en ? 'Print / Save as PDF' : '列印 / 另存 PDF'}</button>
+<div class="page">
+<div class="cover">
+  <div class="meta"><b>${escH(s.subject)}</b><dl>
+    <dt>${en ? 'Date' : '日期'}</dt><dd>${new Date(s.date).toLocaleString()}</dd>
+    <dt>${en ? 'Height' : '身高'}</dt><dd>${f2(s.height_m * 100)} cm</dd>
+    <dt>${en ? 'Mass' : '體重'}</dt><dd>${f2(s.mass_kg)} kg</dd>
+    <dt>${en ? 'Model' : '模型'}</dt><dd>MediaPipe ${escH(s.model)}</dd>
+    <dt>${en ? 'Plumb' : '鉛垂'}</dt><dd>${escH(s.plumbMode)}</dd></dl></div>
+  <div><div class="kicker">ECT · Posture &amp; ROM Lab</div><h1>${title}</h1><p class="lede">${en ? 'Screening report generated on-device. Angles are referenced to the calibrated plumb line.' : '本報告於裝置端產生。角度以校正後鉛垂線為基準；結果為篩檢指標，非臨床診斷。'}</p></div>
+</div>
 ${compare ? `<p>${en ? 'Compared with' : '比較對象'}: ${new Date(compare.date).toLocaleString()}</p>` : ''}
 ${sec}${arom ? romSection(s, compare) : ''}${imgs ?`<section><h2>${en ? 'Charts' : '圖表'}</h2>${imgs}</section>` : ''}
 <section><h2>${t('method')}</h2><p>${en
@@ -162,5 +197,6 @@ ${sec}${arom ? romSection(s, compare) : ''}${imgs ?`<section><h2>${en ? 'Charts'
 <h2>${t('limits')}</h2><p>${en
     ? '2D projection error, occlusion of the far side in lateral views, lens distortion, and landmark bias (hip joint centre ≠ ASIS/PSIS; no spinal landmarks). Results are screening indicators, not diagnoses.'
     : '2D 投影誤差、側面拍攝時遠側肢體遮擋、鏡頭畸變、關鍵點偏差（髖關節中心 ≠ ASIS/PSIS，無脊椎標記點）。結果為篩檢指標，非臨床診斷。'}</p></section>
+</div>
 </body></html>`;
 }
