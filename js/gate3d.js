@@ -74,9 +74,13 @@ export async function startGate3D(host) {
   const bone = n => body.getObjectByName(`mixamorig${n}`) || body.getObjectByName(`mixamorig:${n}`);
   const armL = bone('LeftArm'), armR = bone('RightArm');
   const fwd = new THREE.Vector3(0, 0, 1), q = new THREE.Quaternion(), pq = new THREE.Quaternion(), ax = new THREE.Vector3();
+  // 待機動畫不一定每幀重設上臂骨骼 → 每幀先還原成「動畫姿勢」再加外展，否則角度會一直累加（手臂亂轉）
+  const baseQ = new Map();
+  const restoreArms = () => { for (const [b, q0] of baseQ) b.quaternion.copy(q0); };
+  const saveArms = () => { for (const b of [armL, armR]) if (b) baseQ.set(b, b.quaternion.clone()); };
   const raiseArms = deg => {
     const a = THREE.MathUtils.degToRad(deg);
-    for (const [b, side] of [[armL, -1], [armR, 1]]) {
+    for (const [b, side] of [[armL, 1], [armR, -1]]) {   // 正值 = 往身體外側抬起
       if (!b) continue;
       b.parent.updateWorldMatrix(true, false); b.parent.getWorldQuaternion(pq);
       ax.copy(fwd).applyQuaternion(fig.quaternion).applyQuaternion(pq.invert()).normalize();
@@ -96,15 +100,15 @@ export async function startGate3D(host) {
   let raf = 0, last = performance.now(), t = 0, stopped = false;
   const draw = dt => {
     t += dt;
-    mixer.update(dt);
+    restoreArms(); mixer.update(dt); saveArms();
     fig.rotation.y = Math.sin(t * 0.22) * 0.85;                            // 左右轉身展示，臉多半朝向觀眾
-    raiseArms(140 * Math.max(0, Math.sin(t * 0.5)) ** 2);                // 肩外展：抬起到約 145° 再放下，中間有停頓
+    raiseArms(150 * Math.max(0, Math.sin(t * 0.5)) ** 2);                // 肩外展：0° → 150°（舉過頭）再放下，中間有停頓
     scan.position.y = 0.08 + 1.6 * (0.5 - 0.5 * Math.cos(t * 0.55));
     renderer.render(scene, cam);
   };
   const frame = now => { if (stopped) return; const dt = Math.min(0.05, (now - last) / 1000); last = now; draw(dt); raf = requestAnimationFrame(frame); };
   cv.style.transition = 'opacity .8s'; requestAnimationFrame(() => { cv.style.opacity = '1'; });
-  if (reduce || weak) { mixer.update(0.5); fig.rotation.y = 0.35; raiseArms(70); scan.position.y = 1.1; renderer.render(scene, cam); }
+  if (reduce || weak) { mixer.update(0.5); saveArms(); fig.rotation.y = 0.35; raiseArms(80); scan.position.y = 1.1; renderer.render(scene, cam); }
   else raf = requestAnimationFrame(frame);
 
   return () => {
