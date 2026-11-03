@@ -21,7 +21,7 @@ import { exportBackup, importBackup } from './backup.js';
 import { postureBento, aromBento, countUp, asymName, upgradeBodyMaps } from './bento.js';
 import { DEFAULT_FLOOR, drawFloorGuide, floorHandles, dragFloor, floorQuad } from './floorguide.js';
 
-export const APP_VERSION = '2.4.2'; // 與 sw.js 的 CACHE 版本一起更新
+export const APP_VERSION = '2.4.3'; // 與 sw.js 的 CACHE 版本一起更新
 
 const $ = s => document.querySelector(s);
 const fin = Number.isFinite;
@@ -530,12 +530,14 @@ async function finishRecording() {
 //   → countdown 3 s → record（口令時間軸 + 示範同步；開始 1.5 s 為 0° 基準）→ 分析 → 下一個動作
 const romDemo = createDemo($('#romDemo'));
 // 3D 示範人形（與登入畫面同一個人物）；載入成功就取代向量小人，失敗則保留向量版
-let demo3d = null, demo3dP = null, demoAutoOff = false;
+let demo3d = null, demo3dP = null, demoAutoOff = false, demo3dFail = false;
 // 示範動畫：auto＝一般用 3D，裝置較弱或測試中畫面變慢就改用向量版；3d＝一律 3D；2d＝一律向量（較省電）
 const weakDevice = () => (navigator.hardwareConcurrency || 8) <= 4 || (navigator.deviceMemory || 8) <= 3;
 const use3D = () => cfg.demoStyle === '3d' || (cfg.demoStyle !== '2d' && !demoAutoOff && !weakDevice());
 function ensureDemo3D() {
-  if (!use3D()) return Promise.resolve(null); demo3dP ??= import('./demo3d.js').then(m => m.createDemo3D($('.stage'))).then(d => (demo3d = d)).catch(e => { console.warn('demo3d', e); return null; }); return demo3dP; }
+  if (!use3D()) return Promise.resolve(null); demo3dP ??= import('./demo3d.js').then(m => m.createDemo3D($('.stage'))).then(d => (demo3d = d)).catch(e => { console.warn('demo3d', e); demo3dFail = true; return null; }); return demo3dP; }
+// 3D 還在載入時兩種示範都不顯示，避免先閃一下向量小人；載入失敗才改用向量版
+const demo3dLoading = () => use3D() && !demo3d && !demo3dFail;
 const romMove = () => S.rom.list[S.rom.idx];
 const romName = m => (getLang() === 'en' ? m.en : m.zh);
 const avg = a => a.reduce((s, x) => s + x, 0) / a.length;
@@ -549,8 +551,8 @@ function startRomTest() {
   S.mode = 'rom'; S.guided = false;
   S.session = newSession(); S.session.rom = {};
   S.rom = { list, idx: 0, phaseStart: 0, cueIdx: 0, live: {}, snaps: {}, lastView: null };
-  $('#romDemo').toggleAttribute('hidden', false); // SVG 元素沒有 .hidden 屬性
   ensureDemo3D();
+  $('#romDemo').toggleAttribute('hidden', demo3dLoading()); // SVG 元素沒有 .hidden 屬性
   $('.stage').classList.add('solo');              // AROM：受測者站在遠處，提示字放大
   $('#painBtn').hidden = false;
   speak(v('romIntro'), { interrupt: true });
@@ -567,7 +569,7 @@ async function startPromTest() {
   S.rom = { list, idx: 0, phaseStart: 0, cueIdx: 0, live: {}, snaps: {}, lastView: null, prom: true };
   S.subjHip = null;
   await ensureModel();                               // 換成可偵測 2 人的模型
-  $('#romDemo').toggleAttribute('hidden', false); ensureDemo3D();
+  ensureDemo3D(); $('#romDemo').toggleAttribute('hidden', demo3dLoading());
   $('.stage').classList.add('solo');
   $('#painBtn').hidden = false;
   speak(v('promIntro'), { interrupt: true });
@@ -673,6 +675,7 @@ function stepRom(now, det, detView, vars) {
     else S.slowSince = 0;
   }
   if (demo3d && use3D()) { $('#romDemo').toggleAttribute('hidden', true); demo3d.render(m.view, m.demo(dv), m, dTitle, dVals, !!cfg.mirrorView); }
+  else if (demo3dLoading()) $('#romDemo').toggleAttribute('hidden', true);
   else { demo3d?.hide(); $('#romDemo').toggleAttribute('hidden', false); romDemo.render(m.view, m.demo(dv), m, dTitle, dVals, !!cfg.mirrorView); }
 }
 function romPanel() {
