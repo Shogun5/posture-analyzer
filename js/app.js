@@ -21,7 +21,7 @@ import { exportBackup, importBackup } from './backup.js';
 import { postureBento, aromBento, countUp, asymName, upgradeBodyMaps } from './bento.js';
 import { DEFAULT_FLOOR, drawFloorGuide, floorHandles, dragFloor, floorQuad } from './floorguide.js';
 
-export const APP_VERSION = '2.4.3'; // 與 sw.js 的 CACHE 版本一起更新
+export const APP_VERSION = '2.4.4'; // 與 sw.js 的 CACHE 版本一起更新
 
 const $ = s => document.querySelector(s);
 const fin = Number.isFinite;
@@ -30,11 +30,15 @@ const fin = Number.isFinite;
 const DEF = {
   lang: 'zh', subject: 'S01', height_cm: 170, mass_kg: 65, model: 'heavy', facing: 'environment', res: '720',
   captureSec: 5, countdownSec: 5, visThr: 0.5, mirrorFix: false, autoCapture: true, gesture: true, rawLm: false, thr: DEFAULT_THR,
-  delegate: 'GPU', videoFmt: 'auto', voiceLevel: 'short', deviceId: '', pace: 'normal', maxPeople: 3, demoStyle: 'auto', floorOn: false, floor: { ...DEFAULT_FLOOR }, showTrails: false, mirrorView: false,
+  delegate: 'GPU', videoFmt: 'auto', voiceLevel: 'short', deviceId: '', pace: 'normal', maxPeople: 3, demoStyle: 'auto', floorOn: false, floor: { ...DEFAULT_FLOOR }, showTrails: false, mirrorView: true,
 };
 let cfg = loadCfg();
 function loadCfg() {
-  try { const c = JSON.parse(localStorage.getItem('pa.cfg') || '{}'); return { ...DEF, ...c, thr: { ...DEFAULT_THR, ...(c.thr || {}) }, floor: { ...DEFAULT_FLOOR, ...(c.floor || {}) } }; }
+  try {
+    const c = JSON.parse(localStorage.getItem('pa.cfg') || '{}');
+    // v2.4.4 起預設鏡像（受測者看畫面像照鏡子，不會做反方向）；舊設定改一次，之後尊重使用者的選擇
+    if (!c.mirrorDef2) { c.mirrorView = true; c.mirrorDef2 = true; }
+    return { ...DEF, ...c, thr: { ...DEFAULT_THR, ...(c.thr || {}) }, floor: { ...DEFAULT_FLOOR, ...(c.floor || {}) } }; }
   catch { return { ...DEF }; }
 }
 const saveCfg = () => { try { localStorage.setItem('pa.cfg', JSON.stringify(cfg)); } catch { /* private mode */ } };
@@ -1140,6 +1144,8 @@ $('#itemsForm').addEventListener('change', e => {
 });
 // 示範動畫（⚙ 設定）：改了立即生效，不必等按「儲存設定」
 document.querySelector('select[name=demoStyle]').addEventListener('change', e => { cfg.demoStyle = e.target.value; demoAutoOff = false; saveCfg(); });
+// 鏡像（⚙ 設定）：同樣立即生效，並同步畫面上的「鏡像」按鈕
+document.querySelector('#settingsForm input[name=mirrorView]').addEventListener('change', e => { cfg.mirrorView = e.target.checked; saveCfg(); setFloorUI(); });
 $('#settingsForm').addEventListener('submit', async e => {
   e.preventDefault();
   const f = e.target, old = { ...cfg };
@@ -1371,7 +1377,7 @@ $('#floorEditBtn').onclick = () => {
   saveCfg(); setFloorUI(); if (S.floorEdit) toast(t('floorHint'));
 };
 $('#floorResetBtn').onclick = () => { cfg.floor = { ...DEFAULT_FLOOR }; saveCfg(); };
-$('#mirrorBtn').onclick = () => { cfg.mirrorView = !cfg.mirrorView; saveCfg(); setFloorUI(); };
+$('#mirrorBtn').onclick = () => { cfg.mirrorView = !cfg.mirrorView; saveCfg(); setFloorUI(); fillSettings(); };
 $('#trailBtn').onclick = () => { cfg.showTrails = !cfg.showTrails; saveCfg(); setFloorUI(); };
 const toCanvasPx = e => {
   const el = e.currentTarget, r = el.getBoundingClientRect(), x = (e.clientX - r.left) * canvas.width / r.width;
