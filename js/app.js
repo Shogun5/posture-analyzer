@@ -21,7 +21,7 @@ import { exportBackup, importBackup } from './backup.js';
 import { postureBento, aromBento, countUp, asymName, upgradeBodyMaps } from './bento.js';
 import { DEFAULT_FLOOR, drawFloorGuide, floorHandles, dragFloor, floorQuad } from './floorguide.js';
 
-export const APP_VERSION = '2.3.6'; // 與 sw.js 的 CACHE 版本一起更新
+export const APP_VERSION = '2.3.7'; // 與 sw.js 的 CACHE 版本一起更新
 
 const $ = s => document.querySelector(s);
 const fin = Number.isFinite;
@@ -1409,8 +1409,11 @@ const gateUI = {
   show(state, detail, email) {
     this.state = state;
     $('#gate').classList.remove('hidden');
-    // 需要登入時才載入 3D 開場（已登入的人不會下載 three.js）
-    if (state !== 'checking' && !this.g3d) this.g3d = import('./gate3d.js').then(m => m.startGate3D($('#gate'))).catch(() => () => {});
+    // 3D 開場：需要登入時立即載入；「確認使用權限中」超過 0.5 秒才載入（很快就確認完成的話不載入，避免閃一下）
+    if (!this.g3d && !this.g3dTimer) {
+      const go = () => { this.g3dTimer = null; if (!$('#gate').classList.contains('hidden') && !this.g3d) this.g3d = import('./gate3d.js').then(m => m.startGate3D($('#gate'))).catch(() => () => {}); };
+      if (state === 'checking') this.g3dTimer = setTimeout(go, 500); else go();
+    }
     const el = $('#gateMsg');
     let msg = t(`gate_${state}`);
     if (state === 'denied') msg = (t(`gate_${detail}`) || detail) + (email ? email : '') + (['not_listed', 'disabled', 'expired'].includes(detail) ? t('gate_contact') : '');
@@ -1422,7 +1425,7 @@ const gateUI = {
     $('#gateRedirect').onclick = e => { e.preventDefault(); useRedirectMode(!redirect); };
   },
   diag(txt) { $('#gateDiag').textContent = `v${APP_VERSION} · ${txt}`; },
-  hide() { this.state = 'ok'; $('#gate').classList.add('hidden'); this.g3d?.then(stop => stop()); this.g3d = null; },
+  hide() { this.state = 'ok'; $('#gate').classList.add('hidden'); clearTimeout(this.g3dTimer); this.g3dTimer = null; this.g3d?.then(stop => stop()); this.g3d = null; },
 };
 $('#signOutBtn').onclick = () => signOut();
 
