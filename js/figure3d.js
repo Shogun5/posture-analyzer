@@ -19,17 +19,42 @@ export function loadLib() {
 }
 
 /** 建一個人形：複製模型骨架、換 App 配色、身高 1.65 m、腳踩 y=0。回傳 { root, pose(params, side), bone(name) } */
-export async function makeFigure({ rim = true } = {}) {
+export async function makeFigure({ rim = true, focus = rim } = {}) {
   const { THREE, gltf } = await loadLib();
   const { clone } = await import('https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/utils/SkeletonUtils.js/+esm');
   const body = clone(gltf.scene);
-  const shell = new THREE.MeshPhysicalMaterial({ color: SHELL, roughness: 0.3, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.15 });
-  if (rim) shell.onBeforeCompile = sh => {
-    sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-      float fr = pow(1.0 - abs(dot(normalize(vNormal), normalize(vViewPosition))), 3.0);
-      totalEmissiveRadiance += vec3(0.18, 0.90, 0.66) * fr * 0.5;`);
+  // 受測肢段標示：每根骨骼一個權重（1 = 受測），依頂點的蒙皮權重混合 → 受測肢段變成發光的強調色，其餘身體變暗
+  let skel = null;
+  body.traverse(o => { if (o.isSkinnedMesh && !skel) skel = o.skeleton; });
+  const NB = skel?.bones.length || 1;
+  const hiU = { uHi: { value: new Float32Array(NB) }, uFocus: { value: 0 } };
+  const patchHi = (mat, glow, rimOn) => {
+    mat.onBeforeCompile = sh => {
+      Object.assign(sh.uniforms, hiU);
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
+        uniform float uHi[${NB}];
+        varying float vHi;`).replace('#include <skinning_vertex>', `#include <skinning_vertex>
+        #ifdef USE_SKINNING
+          vHi = uHi[int(skinIndex.x)] * skinWeight.x + uHi[int(skinIndex.y)] * skinWeight.y + uHi[int(skinIndex.z)] * skinWeight.z + uHi[int(skinIndex.w)] * skinWeight.w;
+        #else
+          vHi = 0.0;
+        #endif`);
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+        uniform float uFocus;
+        varying float vHi;`).replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        float hi = smoothstep(0.35, 0.65, vHi) * uFocus;
+        float dim = uFocus * (1.0 - hi);
+        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.5, dim);
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.18, 0.90, 0.66), hi * ${glow ? '0.75' : '0.3'});
+        totalEmissiveRadiance *= 1.0 - 0.7 * dim;
+        totalEmissiveRadiance += vec3(0.18, 0.90, 0.66) * hi * ${glow ? '0.55' : '0.6'};
+        ${rimOn ? `float fr = pow(1.0 - abs(dot(normalize(vNormal), normalize(vViewPosition))), 3.0);
+        totalEmissiveRadiance += vec3(0.18, 0.90, 0.66) * fr * (0.5 * (1.0 - dim) + hi * 1.2);` : ''}`);
+    };
   };
+  const shell = new THREE.MeshPhysicalMaterial({ color: SHELL, roughness: 0.3, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.15 });
   const joint = new THREE.MeshStandardMaterial({ color: ACCENT, emissive: ACCENT, emissiveIntensity: 0.4, roughness: 0.35 });
+  patchHi(shell, true, rim); patchHi(joint, false, false);
   body.traverse(o => { if (o.isMesh) { o.material = /Joints/i.test(o.material?.name || '') ? joint : shell; o.frustumCulled = false; } });
   body.updateMatrixWorld(true);                        // 複製的骨架要先更新，量出來的身高才正確
   const box = new THREE.Box3().setFromObject(body), size = box.getSize(new THREE.Vector3());
@@ -95,7 +120,26 @@ export async function makeFigure({ rim = true } = {}) {
     if ('hipRotR' in p) { rot('RightUpLeg', X, -90); rot('RightLeg', X, 90); rot('RightUpLeg', Z, p.hipRotR || 0); }
     if ('hipRotL' in p) { rot('LeftUpLeg', X, -90); rot('LeftLeg', X, 90); rot('LeftUpLeg', Z, -(p.hipRotL || 0)); }
     body.updateMatrixWorld(true);
+    if (focus) highlight(p, S);
   };
+  // 依示範參數決定受測肢段：[骨骼, 是否含所有子骨骼]
+  const SEG = {
+    shAbdR: [['RightArm', 1]], shAbdL: [['LeftArm', 1]], shFlex: [['#Arm', 1]], shRot: [['#Arm', 1]], elbowFlex: [['#ForeArm', 1]],
+    hipAbdR: [['RightUpLeg', 1]], hipAbdL: [['LeftUpLeg', 1]], hipFlex: [['#UpLeg', 1]], kneeFlex: [['#Leg', 1]],
+    hipRotR: [['RightLeg', 1]], hipRotL: [['LeftLeg', 1]],
+    trunkLat: [['Spine', 0], ['Spine1', 0], ['Spine2', 0]], trunkFlex: [['Spine', 0], ['Spine1', 0], ['Spine2', 0]],
+    neckLat: [['Neck', 1]], neckFlex: [['Neck', 1]],
+  };
+  function highlight(p, S) {
+    const on = new Set();
+    for (const k of Object.keys(p)) for (const [n, deep] of SEG[k] || []) {
+      const b = bone(n.replace('#', S)); if (!b) continue;
+      if (deep) b.traverse(c => on.add(c)); else on.add(b);
+    }
+    const a = hiU.uHi.value; a.fill(0);
+    skel?.bones.forEach((b, i) => { if (on.has(b)) a[i] = 1; });
+    hiU.uFocus.value = on.size ? 1 : 0;
+  }
   pose({});
   return { THREE, root, body, pose, bone };
 }
